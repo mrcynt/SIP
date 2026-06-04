@@ -48,6 +48,9 @@ export default function Pemeriksaan() {
   const [uploadMode, setUploadMode] = useState('kategori'); 
   const [photos, setPhotos] = useState([]); 
   
+  // STATE BARU: PENGONTROL MODAL PILIHAN KAMERA/GALERI
+  const [mediaSheet, setMediaSheet] = useState({ isOpen: false, kategori: null });
+  
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState('');
 
@@ -56,7 +59,7 @@ export default function Pemeriksaan() {
   const [searchLaporan, setSearchLaporan] = useState('');
 
   // ========================================================
-  // KAMERA DENGAN "KACAMATA KUDA" (PRESISI TINGGI)
+  // KAMERA DENGAN KOTAK DIPERBESAR & LEBIH SENSITIF (20 FPS)
   // ========================================================
   const [isScanning, setIsScanning] = useState(false);
   const [isTorchOn, setIsTorchOn] = useState(false);
@@ -65,7 +68,6 @@ export default function Pemeriksaan() {
   useEffect(() => {
     if (isScanning) {
       setIsTorchOn(false);
-      
       setTimeout(() => {
         const html5QrCode = new Html5Qrcode("reader");
         scannerRef.current = html5QrCode;
@@ -73,17 +75,15 @@ export default function Pemeriksaan() {
         html5QrCode.start(
           { facingMode: "environment" }, 
           { 
-            fps: 15,
-            // qrbox AKTIF KEMBALI: Dibuat pipih (Lebar 260px, Tinggi 80px)
-            // Scanner HANYA akan membaca barcode yang masuk area ini!
-            qrbox: { width: 260, height: 80 } 
+            fps: 20, // LEBIH SENSITIF MENANGKAP GAMBAR
+            qrbox: { width: 320, height: 140 } // DIPERBESAR AGAR LEBIH GAMPANG PAS
           },
           (decodedText) => {
             setSerialNumber(decodedText.toUpperCase()); 
             setIsScanning(false); 
             html5QrCode.stop().catch(console.error); 
           },
-          (errorMessage) => { /* Abaikan error loop */ }
+          (errorMessage) => { /* Abaikan error loop per detik */ }
         ).catch(err => {
           console.error(err);
           setError("Kamera gagal diakses. Pastikan browser memiliki izin kamera.");
@@ -91,7 +91,6 @@ export default function Pemeriksaan() {
         });
       }, 200);
     }
-
     return () => {
       if (scannerRef.current && scannerRef.current.isScanning) {
         scannerRef.current.stop().catch(console.error);
@@ -103,19 +102,17 @@ export default function Pemeriksaan() {
   const toggleTorch = () => {
     if (scannerRef.current) {
       const newState = !isTorchOn;
-      scannerRef.current.applyVideoConstraints({
-        advanced: [{ torch: newState }]
-      }).then(() => { setIsTorchOn(newState); })
+      scannerRef.current.applyVideoConstraints({ advanced: [{ torch: newState }] })
+        .then(() => { setIsTorchOn(newState); })
         .catch(err => {
-        console.error(err);
-        alert("Maaf, sepertinya HP Anda tidak mendukung pengontrolan Senter via Web.");
-      });
+          console.error(err);
+          alert("Maaf, sepertinya HP Anda tidak mendukung pengontrolan Senter via Web.");
+        });
     }
   };
   // ========================================================
 
   useEffect(() => { return () => { photos.forEach(p => URL.revokeObjectURL(p.preview)); }; }, [photos]);
-
   useEffect(() => { if (activeTab === 'laporan') fetchLaporan(); }, [activeTab]);
 
   const fetchLaporan = async () => {
@@ -186,7 +183,6 @@ export default function Pemeriksaan() {
   };
 
   const removePhoto = (id) => { setPhotos(prev => prev.filter(p => p.id !== id)); };
-
   const handleBatal = () => { setSerialNumber(''); setIsSnLocked(false); setPhotos([]); setError(''); };
 
   const handleSimpanData = async () => {
@@ -243,7 +239,7 @@ export default function Pemeriksaan() {
   return (
     <div className="max-w-4xl mx-auto pb-24 font-sans relative select-none">
       
-      {/* MODAL SCANNER KAMERA + SENTER + TARGET BOX PRESISI */}
+      {/* MODAL SCANNER BARCODE */}
       {isScanning && (
         <div className="fixed inset-0 bg-slate-900/95 z-[120] flex flex-col justify-center items-center backdrop-blur-md animate-in fade-in duration-300">
           <div className="w-full max-w-md bg-white rounded-3xl overflow-hidden shadow-2xl m-4 flex flex-col animate-in zoom-in-95 duration-300">
@@ -258,9 +254,9 @@ export default function Pemeriksaan() {
             <div className="relative bg-black w-full h-[450px] flex items-center justify-center overflow-hidden">
               <div id="reader" className="w-full h-full object-cover"></div>
               
-              {/* Overlay Visual Penuntun (Ukurannya DISAMAKAN dengan qrbox: 260x80) */}
+              {/* TARGET BOX: SEKARANG UKURAN 320x140 AGAR LEBIH LEGA */}
               <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                <div className="w-[260px] h-[80px] border-2 border-[#34A853] relative shadow-[0_0_0_9999px_rgba(0,0,0,0.6)]">
+                <div className="w-[320px] h-[140px] border-2 border-[#34A853] relative shadow-[0_0_0_9999px_rgba(0,0,0,0.6)]">
                   <div className="absolute top-0 left-0 w-4 h-4 border-t-4 border-l-4 border-[#34A853] -mt-1 -ml-1"></div>
                   <div className="absolute top-0 right-0 w-4 h-4 border-t-4 border-r-4 border-[#34A853] -mt-1 -mr-1"></div>
                   <div className="absolute bottom-0 left-0 w-4 h-4 border-b-4 border-l-4 border-[#34A853] -mb-1 -ml-1"></div>
@@ -275,6 +271,43 @@ export default function Pemeriksaan() {
               <button onClick={toggleTorch} className={`absolute bottom-6 flex items-center justify-center gap-2 px-5 py-2.5 rounded-full font-bold text-sm transition-all shadow-lg border ${isTorchOn ? 'bg-amber-400 text-amber-900 border-amber-300' : 'bg-slate-800/80 text-white border-white/20 hover:bg-[#1A73E8]'}`} title="Senter Kamera">
                 {isTorchOn ? '💡 Matikan Senter' : '🔦 Nyalakan Senter'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================
+          MODAL PILIHAN KAMERA ATAU GALERI (BOTTOM SHEET)
+          ======================================================== */}
+      {mediaSheet.isOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 z-[110] flex justify-center items-end sm:items-center p-0 sm:p-4 backdrop-blur-sm animate-in fade-in duration-300">
+          <div className="bg-white w-full max-w-sm rounded-t-3xl sm:rounded-3xl p-6 pb-10 sm:pb-6 shadow-2xl animate-in slide-in-from-bottom-full sm:zoom-in-95 duration-300">
+            <div className="flex justify-between items-center mb-6">
+              <div>
+                <h3 className="font-extrabold text-slate-800 text-lg">Pilih Sumber Foto</h3>
+                <p className="text-xs font-bold text-slate-400 mt-1 uppercase tracking-wide">{mediaSheet.kategori}</p>
+              </div>
+              <button onClick={() => setMediaSheet({isOpen:false, kategori:null})} className="w-8 h-8 bg-slate-100 rounded-full flex items-center justify-center text-slate-500 font-bold hover:bg-slate-200 transition-colors">✕</button>
+            </div>
+            
+            <div className="flex flex-col gap-3">
+              {/* TOMBOL KAMERA (Otomatis Buka Kamera Langsung berkat capture="environment") */}
+              <label className="w-full flex items-center justify-center gap-3 bg-[#1A73E8] text-white py-4 rounded-2xl font-bold cursor-pointer hover:bg-[#1557B0] transition-colors shadow-sm active:scale-95">
+                <span className="text-xl">📷</span> Ambil Foto Langsung
+                <input 
+                  type="file" accept="image/*" capture="environment" className="hidden" 
+                  onChange={(e) => { handleKategoriChange(mediaSheet.kategori, e); setMediaSheet({isOpen:false, kategori:null}); }} 
+                />
+              </label>
+              
+              {/* TOMBOL GALERI */}
+              <label className="w-full flex items-center justify-center gap-3 bg-[#F8F9FA] text-slate-700 border border-slate-200 py-4 rounded-2xl font-bold cursor-pointer hover:bg-slate-100 transition-colors shadow-sm active:scale-95">
+                <span className="text-xl">🖼️</span> Pilih dari Galeri HP
+                <input 
+                  type="file" accept="image/*" className="hidden" 
+                  onChange={(e) => { handleKategoriChange(mediaSheet.kategori, e); setMediaSheet({isOpen:false, kategori:null}); }} 
+                />
+              </label>
             </div>
           </div>
         </div>
@@ -366,8 +399,12 @@ export default function Pemeriksaan() {
                   {KATEGORI_WAJIB.map((kat) => {
                     const photo = photos.find(p => p.kategori === kat);
                     return (
-                      <label key={kat} className={`relative flex flex-col items-center justify-center p-3 border ${photo ? 'border-[#34A853] bg-[#E6F4EA]/20' : 'border-slate-200 bg-white hover:bg-[#F8F9FA]'} rounded-2xl cursor-pointer transition-all h-28 overflow-hidden group`}>
-                        <input type="file" accept="image/*" className="hidden" onChange={(e) => handleKategoriChange(kat, e)} />
+                      // TAG LABEL DIUBAH MENJADI DIV AGAR BISA MEMANGGIL MODAL PILIHAN KAMERA/GALERI
+                      <div 
+                        key={kat} 
+                        onClick={() => setMediaSheet({ isOpen: true, kategori: kat })}
+                        className={`relative flex flex-col items-center justify-center p-3 border ${photo ? 'border-[#34A853] bg-[#E6F4EA]/20' : 'border-slate-200 bg-white hover:bg-[#F8F9FA]'} rounded-2xl cursor-pointer transition-all h-28 overflow-hidden group`}
+                      >
                         {photo ? (
                           <>
                             <img src={photo.preview} className="absolute inset-0 w-full h-full object-cover" alt={kat} />
@@ -377,7 +414,7 @@ export default function Pemeriksaan() {
                         ) : (
                           <><span className="text-[10px] font-bold text-slate-500 text-center leading-tight px-1">{kat}</span></>
                         )}
-                      </label>
+                      </div>
                     );
                   })}
                 </div>
