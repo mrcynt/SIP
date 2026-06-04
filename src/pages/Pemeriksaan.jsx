@@ -58,7 +58,7 @@ export default function Pemeriksaan() {
   const [searchLaporan, setSearchLaporan] = useState('');
 
   // ========================================================
-  // KAMERA SUPER SENSITIF & RAW TORCH CONTROL
+  // KAMERA MODE SNIPER & SENTER VERSI AWAL YANG BERHASIL
   // ========================================================
   const [isScanning, setIsScanning] = useState(false);
   const [isTorchOn, setIsTorchOn] = useState(false);
@@ -74,9 +74,10 @@ export default function Pemeriksaan() {
         html5QrCode.start(
           { facingMode: "environment" }, 
           { 
-            fps: 10, // FPS diturunkan agar mesin fokus punya waktu menangkap gambar yang tajam
-            disableFlip: false // Mengaktifkan pemindaian untuk barcode yang terbalik
-            // qrbox SENGAJA DIHAPUS agar mesin membaca FULL SCREEN tanpa memotong ujung barcode
+            fps: 15,
+            // MODE SNIPER: Sangat pipih. Mesin TIDAK BISA melihat barcode di atas/bawahnya.
+            qrbox: { width: 330, height: 60 },
+            disableFlip: false
           },
           (decodedText) => {
             setSerialNumber(decodedText.toUpperCase()); 
@@ -99,29 +100,18 @@ export default function Pemeriksaan() {
     };
   }, [isScanning]);
 
-  const toggleTorch = async () => {
-    const newState = !isTorchOn;
-    
-    try {
-      // Mengakses jalur hardware kamera secara langsung melewati library
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-      const track = stream.getVideoTracks()[0];
-      
-      const capabilities = track.getCapabilities();
-      if (capabilities.torch) {
-        await track.applyConstraints({ advanced: [{ torch: newState }] });
+  // FUNGSI SENTER DIKEMBALIKAN KE VERSI AWAL YANG BAGUS
+  const toggleTorch = () => {
+    if (scannerRef.current) {
+      const newState = !isTorchOn;
+      scannerRef.current.applyVideoConstraints({
+        advanced: [{ torch: newState }]
+      }).then(() => {
         setIsTorchOn(newState);
-      } else {
-        alert("Perangkat ini tidak mendukung kontrol senter dari Browser (Khusus Android/Chrome).");
-      }
-    } catch (err) {
-      console.error("Gagal menyalakan senter:", err);
-      // Fallback ke library jika raw access ditolak
-      if (scannerRef.current) {
-        scannerRef.current.applyVideoConstraints({ advanced: [{ torch: newState }] })
-          .then(() => setIsTorchOn(newState))
-          .catch(() => alert("Senter gagal dinyalakan. HP atau Browser Anda memblokir fitur ini."));
-      }
+      }).catch(err => {
+        console.error(err);
+        alert("Maaf, sepertinya Browser Anda memblokir pengontrolan Senter.");
+      });
     }
   };
   // ========================================================
@@ -268,16 +258,17 @@ export default function Pemeriksaan() {
             <div className="relative bg-black w-full h-[450px] flex items-center justify-center overflow-hidden">
               <div id="reader" className="w-full h-full object-cover"></div>
               
+              {/* TARGET BOX: SNIPER MODE (Tinggi cuma 60px) */}
               <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                <div className="w-[320px] h-[140px] border-2 border-[#34A853] relative shadow-[0_0_0_9999px_rgba(0,0,0,0.6)]">
+                <div className="w-[330px] h-[60px] border-2 border-[#34A853] relative shadow-[0_0_0_9999px_rgba(0,0,0,0.7)]">
                   <div className="absolute top-0 left-0 w-4 h-4 border-t-4 border-l-4 border-[#34A853] -mt-1 -ml-1"></div>
                   <div className="absolute top-0 right-0 w-4 h-4 border-t-4 border-r-4 border-[#34A853] -mt-1 -mr-1"></div>
                   <div className="absolute bottom-0 left-0 w-4 h-4 border-b-4 border-l-4 border-[#34A853] -mb-1 -ml-1"></div>
                   <div className="absolute bottom-0 right-0 w-4 h-4 border-b-4 border-r-4 border-[#34A853] -mb-1 -mr-1"></div>
-                  <div className="absolute w-full h-0.5 bg-red-500/80 top-1/2 left-0 transform -translate-y-1/2 animate-pulse shadow-[0_0_8px_rgba(239,68,68,1)]"></div>
+                  <div className="absolute w-full h-0.5 bg-red-500/90 top-1/2 left-0 transform -translate-y-1/2 animate-pulse shadow-[0_0_8px_rgba(239,68,68,1)]"></div>
                 </div>
                 <p className="text-white text-xs font-bold mt-8 bg-black/70 px-4 py-2 rounded-full tracking-wide text-center leading-relaxed backdrop-blur-sm border border-white/10">
-                  Pastikan fokus. Barcode sekecil apapun akan tertangkap.
+                  Tepatkan Barcode di atas Garis Merah.<br/>Barcode lain akan diabaikan.
                 </p>
               </div>
 
