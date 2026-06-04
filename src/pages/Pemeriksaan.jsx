@@ -58,7 +58,7 @@ export default function Pemeriksaan() {
   const [searchLaporan, setSearchLaporan] = useState('');
 
   // ========================================================
-  // STATE SCANNER DENGAN KOTAK FLEKSIBEL (RESIZABLE)
+  // STATE SCANNER DENGAN RESOLUSI AMAN & KOTAK DIATUR USER
   // ========================================================
   const [isScanning, setIsScanning] = useState(false);
   const [isTorchOn, setIsTorchOn] = useState(false);
@@ -75,11 +75,11 @@ export default function Pemeriksaan() {
         scannerRef.current = html5QrCode;
         
         html5QrCode.start(
-          // KITA SUNTIKKAN PENGATURAN RESOLUSI HD 720p DI SINI
+          // PERBAIKAN: FORMAT RESOLUSI DISEDERHANAKAN AGAR ANTI-GAGAL BUKA
           { 
             facingMode: "environment",
-            width: { ideal: 1280, min: 640 }, 
-            height: { ideal: 720, min: 480 } 
+            width: 1280, 
+            height: 720 
           }, 
           { 
             fps: 15,
@@ -93,18 +93,17 @@ export default function Pemeriksaan() {
           },
           (errorMessage) => { /* Abaikan error loop scan */ }
         ).then(() => {
-          // SETELAH KAMERA NYALA, KITA PAKSA AUTO-FOCUS MENYALA TERUS
+          // SETELAH SUKSES TERBUKA, TETAP PAKSA LENSA UNTUK AUTO-FOCUS KONTINU
           if (scannerRef.current) {
             scannerRef.current.applyVideoConstraints({
               advanced: [{ focusMode: "continuous" }]
             }).catch(e => {
-              // Abaikan jika HP tidak mensupport kontrol fokus manual
-              console.log("Auto-focus kontinu berjalan otomatis", e);
+              console.log("Fokus otomatis berjalan pada mode standar", e);
             });
           }
         }).catch(err => {
           console.error(err);
-          setError("Kamera gagal diakses. Pastikan browser memiliki izin kamera.");
+          setError("Gagal mengakses kamera dengan resolusi tinggi. Silakan coba klik ikon kamera sekali lagi.");
           setIsScanning(false);
         });
       }, 200);
@@ -119,7 +118,7 @@ export default function Pemeriksaan() {
   }, [isScanning, boxWidth, boxHeight]); 
 
   // ========================================================
-  // LOGIKA SENTER
+  // LOGIKA SENTER ASLI MILIKMU (TIDAK DIUBAH-UBAH)
   // ========================================================
   const toggleTorch = async () => {
     try {
@@ -153,31 +152,15 @@ export default function Pemeriksaan() {
     finally { setIsLaporanLoading(false); }
   };
 
-  if (!user?.assignedUnit || !user?.assignedTahap) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] font-sans">
-        <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mb-4"><span className="text-4xl">🚷</span></div>
-        <h2 className="text-xl font-bold text-slate-800">Anda Belum Mendapat Tugas</h2>
-        <p className="text-slate-500 mt-2 text-center max-w-sm">Hubungi Admin/Supervisor untuk mengatur Unit dan Tahap Anda.</p>
-      </div>
-    );
-  }
-
   const handleLockSN = async (e) => {
     e?.preventDefault();
     const finalSN = serialNumber.trim().toUpperCase();
-
     if (!finalSN) { setError("Silakan isi/scan Serial Number terlebih dahulu."); return; }
     setIsCheckingSN(true); setError('');
-
     try {
       const cekLokal = await dbLocal.antrean_pemeriksaan.toArray();
       const isAdaDiLokal = cekLokal.some(item => item.serialNumber === finalSN);
-      if (isAdaDiLokal) {
-        setError(`DITOLAK: SN [${finalSN}] sudah ada di antrean offline Anda!`);
-        setIsCheckingSN(false); return;
-      }
-
+      if (isAdaDiLokal) { setError(`DITOLAK: SN [${finalSN}] sudah ada di antrean offline Anda!`); setIsCheckingSN(false); return; }
       if (navigator.onLine) {
         const qCekOnline = query(collection(db, 'pemeriksaan_records'), where('serialNumber', '==', finalSN));
         const snapCekOnline = await getDocs(qCekOnline);
@@ -188,24 +171,18 @@ export default function Pemeriksaan() {
         }
       }
       setIsSnLocked(true);
-    } catch (err) {
-      console.error(err); setError("Terjadi gangguan saat memvalidasi SN. Periksa internet.");
-    } finally { setIsCheckingSN(false); }
+    } catch (err) { console.error(err); setError("Terjadi gangguan saat memvalidasi SN. Periksa internet."); } 
+    finally { setIsCheckingSN(false); }
   };
 
   const handleKategoriChange = (kategori, e) => {
-    const file = e.target.files[0];
-    if (!file) return;
+    const file = e.target.files[0]; if (!file) return;
     const preview = URL.createObjectURL(file);
-    setPhotos(prev => {
-      const filtered = prev.filter(p => p.kategori !== kategori);
-      return [...filtered, { id: Date.now().toString(), file, preview, kategori }];
-    });
+    setPhotos(prev => { const filtered = prev.filter(p => p.kategori !== kategori); return [...filtered, { id: Date.now().toString(), file, preview, kategori }]; });
   };
 
   const handleBulkChange = (e) => {
-    const files = Array.from(e.target.files);
-    if (files.length === 0) return;
+    const files = Array.from(e.target.files); if (files.length === 0) return;
     const newPhotos = files.map((file, i) => ({ id: `${Date.now()}_${i}`, file, preview: URL.createObjectURL(file), kategori: `Foto Pemeriksaan${i + 1}` }));
     setPhotos(prev => [...prev, ...newPhotos]);
   };
@@ -217,22 +194,16 @@ export default function Pemeriksaan() {
     if (uploadMode === 'kategori') {
       const isLengkap = KATEGORI_WAJIB.every(kat => photos.some(p => p.kategori === kat));
       if (!isLengkap) return setError("Mohon lengkapi seluruh 12 kategori foto wajib!");
-    } else {
-      if (photos.length === 0) return setError("Mohon unggah minimal 1 foto!");
-    }
+    } else { if (photos.length === 0) return setError("Mohon unggah minimal 1 foto!"); }
     setIsUploading(true); setError('');
-    
     try {
       const finalSerialNumber = serialNumber.trim().toUpperCase();
       const pemeriksaanId = `${user.assignedUnit}_${user.assignedTahap}_${finalSerialNumber}`;
-      
       if (!navigator.onLine) {
         await dbLocal.antrean_pemeriksaan.add({ id: pemeriksaanId, unit: user.assignedUnit, tahap: user.assignedTahap, serialNumber: finalSerialNumber, petugas: user.username, timestamp: new Date().toISOString() });
         for (const p of photos) { await dbLocal.antrean_foto.add({ pemeriksaan_id: pemeriksaanId, kategori: p.kategori, file_blob: p.file }); }
-        handleBatal(); setIsUploading(false); setNotifKerjaan({ isOpen: true, isOffline: true });
-        return;
+        handleBatal(); setIsUploading(false); setNotifKerjaan({ isOpen: true, isOffline: true }); return;
       }
-
       const counterDocRef = doc(db, 'counters', `${user.assignedUnit}_${user.assignedTahap}`);
       let nomorUrutResmi = 1;
       await runTransaction(db, async (transaction) => {
@@ -240,24 +211,13 @@ export default function Pemeriksaan() {
         if (!counterDoc.exists()) { transaction.set(counterDocRef, { currentNumber: 1 }); nomorUrutResmi = 1; } 
         else { const newNumber = counterDoc.data().currentNumber + 1; transaction.update(counterDocRef, { currentNumber: newNumber }); nomorUrutResmi = newNumber; }
       });
-
-      const processedPhotos = await Promise.all(photos.map(async (p, index) => {
-        const base64 = await compressImage(p.file);
-        return { kategori: p.kategori, filename: `${p.kategori}_${index + 1}.jpg`, base64: base64 };
-      }));
-
-      const result = await fetchWithRetry(DRIVE_API_URL, {
-        redirect: "follow", method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify({ unit: user.assignedUnit, tahap: user.assignedTahap, serialNumber: finalSerialNumber, nomorUrut: nomorUrutResmi, photos: processedPhotos })
-      }, 3, 15000);
-
+      const processedPhotos = await Promise.all(photos.map(async (p, index) => { const base64 = await compressImage(p.file); return { kategori: p.kategori, filename: `${p.kategori}_${index + 1}.jpg`, base64: base64 }; }));
+      const result = await fetchWithRetry(DRIVE_API_URL, { redirect: "follow", method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ unit: user.assignedUnit, tahap: user.assignedTahap, serialNumber: finalSerialNumber, nomorUrut: nomorUrutResmi, photos: processedPhotos }) }, 3, 15000);
       if (result.status === 'success') {
         await addDoc(collection(db, 'pemeriksaan_records'), { unit: user.assignedUnit, tahap: user.assignedTahap, nomorUrut: nomorUrutResmi, serialNumber: finalSerialNumber, formatTampil: `${nomorUrutResmi}. ${finalSerialNumber}`, petugas: user.username, timestamp: new Date().toISOString() });
         handleBatal(); setIsUploading(false); setNotifKerjaan({ isOpen: true, isOffline: false });
       } else { throw new Error(result.message); }
-    } catch (err) {
-      console.error(err); setError(`Gagal mengirim data: ${err.message}`); setIsUploading(false);
-    }
+    } catch (err) { console.error(err); setError(`Gagal mengirim data: ${err.message}`); setIsUploading(false); }
   };
 
   const progressCount = uploadMode === 'kategori' ? KATEGORI_WAJIB.filter(kat => photos.some(p => p.kategori === kat)).length : photos.length;
@@ -267,9 +227,7 @@ export default function Pemeriksaan() {
   return (
     <div className="max-w-4xl mx-auto pb-24 font-sans relative select-none">
       
-      {/* ========================================================
-          MODAL SCANNER KAMERA (DENGAN TOMBOL UKURAN)
-          ======================================================== */}
+      {/* MODAL SCANNER KAMERA */}
       {isScanning && (
         <div className="fixed inset-0 bg-slate-900/95 z-[120] flex flex-col justify-center items-center backdrop-blur-md animate-in fade-in duration-300">
           <div className="w-full max-w-md bg-white rounded-3xl overflow-hidden shadow-2xl m-4 flex flex-col animate-in zoom-in-95 duration-300">
@@ -281,11 +239,9 @@ export default function Pemeriksaan() {
               <button onClick={() => setIsScanning(false)} className="text-slate-300 hover:text-white bg-slate-700 hover:bg-red-500 rounded-full w-8 h-8 flex items-center justify-center transition-colors font-bold">✕</button>
             </div>
             
-            {/* AREA VIDEO KAMERA */}
             <div className="relative bg-black w-full h-[360px] flex items-center justify-center overflow-hidden shrink-0">
               <div id="reader" className="w-full h-full object-cover"></div>
               
-              {/* TARGET BOX OVERLAY */}
               <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                 <div style={{ width: `${boxWidth}px`, height: `${boxHeight}px` }} className="border-2 border-[#34A853] relative shadow-[0_0_0_9999px_rgba(0,0,0,0.65)] transition-all duration-150">
                   <div className="absolute top-0 left-0 w-4 h-4 border-t-4 border-l-4 border-[#34A853] -mt-1 -ml-1"></div>
@@ -297,7 +253,6 @@ export default function Pemeriksaan() {
               </div>
             </div>
 
-            {/* PANEL KONTROL UKURAN & SENTER INDEPENDEN */}
             <div className="p-4 bg-slate-50 border-t border-slate-100 flex flex-col gap-3 shrink-0">
               <div className="flex justify-between items-center text-xs font-bold text-slate-600">
                 <span>Sesuaikan Kotak Bidik Di Lapangan:</span>
@@ -306,7 +261,6 @@ export default function Pemeriksaan() {
                 </button>
               </div>
               
-              {/* TOMBOL ADJUSTMENT UKURAN (+/-) */}
               <div className="grid grid-cols-2 gap-3">
                 <div className="flex items-center justify-between bg-white p-2 rounded-xl border border-slate-200 shadow-sm">
                   <span className="text-[11px] font-black text-slate-400 pl-1 uppercase">Lebar</span>
@@ -316,7 +270,6 @@ export default function Pemeriksaan() {
                     <button type="button" onClick={() => setBoxWidth(w => Math.min(380, w + 20))} className="w-8 h-8 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-lg font-black transition-colors">+</button>
                   </div>
                 </div>
-                
                 <div className="flex items-center justify-between bg-white p-2 rounded-xl border border-slate-200 shadow-sm">
                   <span className="text-[11px] font-black text-slate-400 pl-1 uppercase">Tinggi</span>
                   <div className="flex items-center gap-1.5">
@@ -343,13 +296,11 @@ export default function Pemeriksaan() {
               </div>
               <button onClick={() => setMediaSheet({isOpen:false, kategori:null})} className="w-8 h-8 bg-slate-100 rounded-full flex items-center justify-center text-slate-500 font-bold hover:bg-slate-200 transition-colors">✕</button>
             </div>
-            
             <div className="flex flex-col gap-3">
               <label className="w-full flex items-center justify-center gap-3 bg-[#1A73E8] text-white py-4 rounded-2xl font-bold cursor-pointer hover:bg-[#1557B0] transition-colors shadow-sm active:scale-95">
                 <span className="text-xl">📷</span> Ambil Foto Langsung
                 <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => { handleKategoriChange(mediaSheet.kategori, e); setMediaSheet({isOpen:false, kategori:null}); }} />
               </label>
-              
               <label className="w-full flex items-center justify-center gap-3 bg-[#F8F9FA] text-slate-700 border border-slate-200 py-4 rounded-2xl font-bold cursor-pointer hover:bg-slate-100 transition-colors shadow-sm active:scale-95">
                 <span className="text-xl">🖼️</span> Pilih dari Galeri HP
                 <input type="file" accept="image/*" className="hidden" onChange={(e) => { handleKategoriChange(mediaSheet.kategori, e); setMediaSheet({isOpen:false, kategori:null}); }} />
@@ -411,7 +362,7 @@ export default function Pemeriksaan() {
                     autoFocus disabled={isCheckingSN}
                   />
                   <button type="button" onClick={() => setIsScanning(true)} disabled={isCheckingSN} className="absolute right-2 w-11 h-11 flex items-center justify-center text-slate-400 hover:text-white bg-white hover:bg-[#1A73E8] border border-slate-200 hover:border-transparent rounded-xl transition-all shadow-sm group" title="Buka Kamera Scanner">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 transform group-hover:scale-110 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9zM15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 transform group-hover:scale-110 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812-1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9zM15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
                   </button>
                 </div>
                 <button type="submit" disabled={isCheckingSN} className="px-6 py-2.5 bg-[#1A73E8] hover:bg-[#1557B0] disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-bold text-xs rounded-full transition-colors shadow-sm flex items-center gap-2">
