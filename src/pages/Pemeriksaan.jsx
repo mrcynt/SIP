@@ -5,7 +5,7 @@ import { collection, addDoc, runTransaction, doc, query, where, getDocs, orderBy
 import { dbLocal } from '../db/offlineDB';
 import { fetchWithRetry } from '../utils/network';
 
-// IMPORT ZXING SEBAGAI CADANGAN (Pilihan Utamamu!)
+// IMPORT ZXING SEBAGAI CADANGAN
 import { BrowserMultiFormatReader } from '@zxing/browser';
 
 const DRIVE_API_URL = "https://script.google.com/macros/s/AKfycbyJwmBp6pfgIgO9jSOl-RbQ6RMBTQPUX0zJFd_3TYqQ-egca9WNOImoKrLYW6PkQUDBYQ/exec";
@@ -82,7 +82,7 @@ export default function Pemeriksaan() {
 
     const startScanner = async () => {
       try {
-        // 1. Ambil stream kamera dengan resolusi 720p
+        // 1. Ambil stream kamera dengan resolusi 720p (Lebih ringan & cepat diproses JS)
         localStream = await navigator.mediaDevices.getUserMedia({
           video: {
             facingMode: "environment",
@@ -99,7 +99,7 @@ export default function Pemeriksaan() {
         const track = localStream.getVideoTracks()[0];
         scannerTrackRef.current = track;
 
-        // Autofocus & Zoom agar barcode makin jelas
+        // Autofocus & Zoom Sedikit biar barcode makin jelas
         setTimeout(async () => {
           try {
             const capabilities = track.getCapabilities?.() || {};
@@ -118,7 +118,7 @@ export default function Pemeriksaan() {
           }
         }, 1000);
 
-        // 2. Cek NATIVE BARCODE SCANNER
+        // 2. Cek apakah HP mendukung NATIVE BARCODE SCANNER (Super Cepat)
         const isNativeSupported = 'BarcodeDetector' in window;
         let nativeDetector = null;
         if (isNativeSupported) {
@@ -134,12 +134,14 @@ export default function Pemeriksaan() {
           try {
             let foundText = null;
 
-            if (nativeDetector && videoRef.current) {
+            // 1. Coba Native Barcode Detector
+            if (nativeDetector) {
               const barcodes = await nativeDetector.detect(videoRef.current);
               if (barcodes.length > 0) foundText = barcodes[0].rawValue;
             }
 
-            if (!foundText && videoRef.current) {
+            // 2. Jika gagal, baru pakai ZXing yang sekali baca (decodeOnce) agar tidak hang
+            if (!foundText) {
               try {
                 const result = await codeReader.decodeOnceFromVideoElement(videoRef.current);
                 if (result) foundText = result.text;
@@ -148,17 +150,16 @@ export default function Pemeriksaan() {
               }
             }
 
-            // JIKA BARCODE KETEMU
-            if (foundText && !isScanned) {
+            // 3. JIKA BARCODE KETEMU
+            if (foundText) {
               isScanned = true;
               const cleanValue = foundText.trim().toUpperCase();
               
+              // Update state data
               setSerialNumber(cleanValue);
               
-              setTimeout(() => {
-                setIsScanning(false);
-              }, 300);
-              
+              // Tutup scanner secara instan
+              setIsScanning(false);
               return; 
             }
           } catch (err) {
@@ -170,6 +171,7 @@ export default function Pemeriksaan() {
           }
         };
 
+        // Mulai loop
         scanFrame();
 
       } catch (err) {
@@ -181,7 +183,7 @@ export default function Pemeriksaan() {
 
     startScanner();
 
-    // CLEANUP ANTI-BLANK SCREEN (Sudah Aman!)
+    // CLEANUP KETIKA MODAL DITUTUP (Mencegah Kamera Nyala Terus & Anti-Blank)
     return () => {
       isScanned = true;
       if (scanTimeout) clearTimeout(scanTimeout);
@@ -194,7 +196,7 @@ export default function Pemeriksaan() {
   }, [isScanning]);
 
   // ========================================================
-  // FUNGSI SENTER (SUDAH BISA BERDAMAI DENGAN AUTO-FOCUS)
+  // FUNGSI SENTER (ASLI KODEMU TANPA DIUBAH SAMA SEKALI)
   // ========================================================
   const toggleTorch = async () => {
     try {
@@ -205,26 +207,12 @@ export default function Pemeriksaan() {
       }
 
       const nextState = !isTorchOn;
-
-      // Ambil settingan yang lagi jalan (seperti auto-focus)
-      const currentConstraints = track.getConstraints();
-      const advanced = currentConstraints.advanced ? [...currentConstraints.advanced] : [];
-      
-      // Bersihkan aturan torch lama biar gak bentrok
-      const filteredAdvanced = advanced.filter(c => !('torch' in c));
-      
-      // Masukkan aturan torch baru berdampingan dengan fokus
-      filteredAdvanced.push({ torch: nextState });
-
       await track.applyConstraints({
-        ...currentConstraints,
-        advanced: filteredAdvanced
+        advanced: [{ torch: nextState }]
       });
-
       setIsTorchOn(nextState);
 
     } catch (err) {
-      console.error(err);
       alert("Senter gagal dinyalakan. HP/Browser ini mungkin memblokir akses senter via web.");
     }
   };
@@ -504,14 +492,17 @@ export default function Pemeriksaan() {
                   {KATEGORI_WAJIB.map((kat) => {
                     const photo = photos.find(p => p.kategori === kat);
                     return (
-                      <div key={kat} onClick={() => setMediaSheet({ isOpen: true, kategori: kat })} className={`relative flex flex-col items-center justify-center p-3 border ${photo ? 'border-[#34A853] bg-[#E6F4EA]/20' : 'border-slate-200 bg-white hover:bg-[#F8F9FA]'} rounded-2xl cursor-pointer transition-all h-28 overflow-hidden group`}>
+                      <div key={kat} onClick={() => setMediaSheet({ isOpen: true, kategori: kat })} className={`relative flex flex-col items-center justify-center p-3 border ${photo ? 'border-[#34A853] bg-[#E6F4EA]/20' : 'border-slate-200 bg-white hover:bg-[#F8F9FA]'} rounded-2xl cursor-pointer transition-all h-28 overflow-hidden group`}
+                      >
                         {photo ? (
                           <>
                             <img src={photo.preview} className="absolute inset-0 w-full h-full object-cover" alt={kat} />
                             <div className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><span className="text-white text-[10px] font-bold bg-black/40 px-2 py-0.5 rounded-full">Ganti</span></div>
                             <div className="absolute top-1 right-1 bg-[#34A853] text-white rounded-full w-5 h-5 flex items-center justify-center shadow-sm"><svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg></div>
                           </>
-                        ) : ( <><span className="text-[10px] font-bold text-slate-500 text-center leading-tight px-1">{kat}</span></> )}
+                        ) : (
+                          <><span className="text-[10px] font-bold text-slate-500 text-center leading-tight px-1">{kat}</span></>
+                        )}
                       </div>
                     );
                   })}
@@ -538,7 +529,9 @@ export default function Pemeriksaan() {
             </div>
             <div className="flex gap-3 justify-end px-1">
               <button onClick={handleBatal} className="px-5 py-2.5 rounded-full font-bold text-xs text-slate-500 bg-slate-100 hover:bg-slate-200 transition-colors">Reset Form</button>
-              <button onClick={handleSimpanData} disabled={isUploading || progressPercent !== 100} className="px-6 py-2.5 bg-[#1A73E8] hover:bg-[#1557B0] disabled:bg-slate-100 disabled:text-slate-400 text-white font-bold text-xs rounded-full transition-all flex items-center gap-1.5 shadow-sm">Kirim Berkas Pemeriksaan</button>
+              <button onClick={handleSimpanData} disabled={isUploading || progressPercent !== 100} className="px-6 py-2.5 bg-[#1A73E8] hover:bg-[#1557B0] disabled:bg-slate-100 disabled:text-slate-400 text-white font-bold text-xs rounded-full transition-all flex items-center gap-1.5 shadow-sm">
+                <span>Kirim Berkas Pemeriksaan</span>
+              </button>
             </div>
           </div>
         </div>
@@ -550,11 +543,20 @@ export default function Pemeriksaan() {
             <h2 className="font-bold text-slate-800 text-lg flex items-center gap-2">📋 Riwayat Data</h2>
             <input type="text" placeholder="Cari Serial Number / Petugas..." value={searchLaporan} onChange={(e) => setSearchLaporan(e.target.value)} className="px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-medium outline-none focus:border-[#4285F4] focus:ring-2 focus:ring-blue-50 w-full sm:w-64" />
           </div>
+          
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm text-slate-600">
-              <thead className="bg-[#F8F9FA] border-b border-slate-100"><tr className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider"><th className="py-4 px-6">Waktu Input</th><th className="py-4 px-6">Serial Number</th><th className="py-4 px-6">Unit / Tahap</th><th className="py-4 px-6">Petugas</th></tr></thead>
+              <thead className="bg-[#F8F9FA] border-b border-slate-100">
+                <tr className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider">
+                  <th className="py-4 px-6">Waktu Input</th><th className="py-4 px-6">Serial Number</th><th className="py-4 px-6">Unit / Tahap</th><th className="py-4 px-6">Petugas</th>
+                </tr>
+              </thead>
               <tbody className="divide-y divide-slate-100">
-                {isLaporanLoading ? ( <tr><td colSpan="4" className="py-12 text-center text-[#1A73E8] font-medium animate-pulse">Memuat riwayat pemeriksaan...</td></tr> ) : filteredLaporan.length === 0 ? ( <tr><td colSpan="4" className="py-12 text-center text-slate-400">Tidak ada data ditemukan.</td></tr> ) : (
+                {isLaporanLoading ? (
+                  <tr><td colSpan="4" className="py-12 text-center text-[#1A73E8] font-medium animate-pulse">Memuat riwayat pemeriksaan...</td></tr>
+                ) : filteredLaporan.length === 0 ? (
+                  <tr><td colSpan="4" className="py-12 text-center text-slate-400">Tidak ada data ditemukan.</td></tr>
+                ) : (
                   filteredLaporan.map((rec) => (
                     <tr key={rec.id} className="hover:bg-slate-50/50 transition-colors">
                       <td className="py-4 px-6 text-xs font-mono text-slate-500">{new Date(rec.timestamp).toLocaleString('id-ID', {day: '2-digit', month: 'short', hour: '2-digit', minute:'2-digit'})}</td>
@@ -574,9 +576,15 @@ export default function Pemeriksaan() {
         <div className="fixed inset-0 bg-slate-900/60 z-[100] flex justify-center items-center p-4 backdrop-blur-sm animate-in fade-in duration-300">
           <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl overflow-hidden flex flex-col transform transition-all animate-in zoom-in-95 duration-300">
             <div className={`p-6 flex flex-col items-center text-center ${notifKerjaan.isOffline ? 'bg-amber-50' : 'bg-green-50'}`}>
-              <div className={`w-20 h-20 rounded-full flex items-center justify-center text-4xl mb-4 shadow-inner ${notifKerjaan.isOffline ? 'bg-amber-100' : 'bg-green-100'}`}> {notifKerjaan.isOffline ? '📡' : '🎉'} </div>
-              <h3 className={`text-xl font-extrabold tracking-tight mb-2 ${notifKerjaan.isOffline ? 'text-amber-800' : 'text-green-800'}`}> {notifKerjaan.isOffline ? 'Tersimpan Offline!' : 'Berhasil Terkirim!'} </h3>
-              <p className="text-sm font-medium text-slate-600 leading-relaxed px-2"> {notifKerjaan.isOffline ? 'Data & foto disimpan aman di memori HP. Sistem akan mengunggahnya otomatis saat internet tersedia.' : 'Pekerjaan ini sudah diunggah ke server dan folder Drive dengan aman.'} </p>
+              <div className={`w-20 h-20 rounded-full flex items-center justify-center text-4xl mb-4 shadow-inner ${notifKerjaan.isOffline ? 'bg-amber-100' : 'bg-green-100'}`}>
+                {notifKerjaan.isOffline ? '📡' : '🎉'}
+              </div>
+              <h3 className={`text-xl font-extrabold tracking-tight mb-2 ${notifKerjaan.isOffline ? 'text-amber-800' : 'text-green-800'}`}>
+                {notifKerjaan.isOffline ? 'Tersimpan Offline!' : 'Berhasil Terkirim!'}
+              </h3>
+              <p className="text-sm font-medium text-slate-600 leading-relaxed px-2">
+                {notifKerjaan.isOffline ? 'Data & foto disimpan aman di memori HP. Sistem akan mengunggahnya otomatis saat internet tersedia.' : 'Pekerjaan ini sudah diunggah ke server dan folder Drive dengan aman.'}
+              </p>
             </div>
             <div className="p-5 bg-white border-t border-slate-100">
               <button onClick={() => setNotifKerjaan({ isOpen: false, isOffline: false })} className={`w-full py-3.5 rounded-xl text-sm font-bold text-white transition-all shadow-md ${notifKerjaan.isOffline ? 'bg-amber-500 hover:bg-amber-600' : 'bg-green-600 hover:bg-green-700'}`}>Oke, Lanjut Bekerja</button>
