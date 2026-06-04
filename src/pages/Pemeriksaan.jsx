@@ -58,7 +58,7 @@ export default function Pemeriksaan() {
   const [searchLaporan, setSearchLaporan] = useState('');
 
   // ========================================================
-  // KAMERA & FUNGSI SENTER TAHAN BANTING (DOUBLE TRICK)
+  // KAMERA SUPER SENSITIF & RAW TORCH CONTROL
   // ========================================================
   const [isScanning, setIsScanning] = useState(false);
   const [isTorchOn, setIsTorchOn] = useState(false);
@@ -73,7 +73,11 @@ export default function Pemeriksaan() {
         
         html5QrCode.start(
           { facingMode: "environment" }, 
-          { fps: 20, qrbox: { width: 320, height: 140 } },
+          { 
+            fps: 10, // FPS diturunkan agar mesin fokus punya waktu menangkap gambar yang tajam
+            disableFlip: false // Mengaktifkan pemindaian untuk barcode yang terbalik
+            // qrbox SENGAJA DIHAPUS agar mesin membaca FULL SCREEN tanpa memotong ujung barcode
+          },
           (decodedText) => {
             setSerialNumber(decodedText.toUpperCase()); 
             setIsScanning(false); 
@@ -96,23 +100,27 @@ export default function Pemeriksaan() {
   }, [isScanning]);
 
   const toggleTorch = async () => {
-    if (!scannerRef.current) return;
-    
     const newState = !isTorchOn;
     
     try {
-      // Trik 1: Format Standar Chrome Android
-      await scannerRef.current.applyVideoConstraints({ advanced: [{ torch: newState }] });
-      setIsTorchOn(newState);
-    } catch (err1) {
-      try {
-        // Trik 2: Format Alternatif (Bypass)
-        await scannerRef.current.applyVideoConstraints({ torch: newState });
+      // Mengakses jalur hardware kamera secara langsung melewati library
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+      const track = stream.getVideoTracks()[0];
+      
+      const capabilities = track.getCapabilities();
+      if (capabilities.torch) {
+        await track.applyConstraints({ advanced: [{ torch: newState }] });
         setIsTorchOn(newState);
-      } catch (err2) {
-        console.error("Senter gagal:", err2);
-        // Tampilkan peringatan jika HP benar-benar memblokir perangkat keras
-        alert("Senter gagal dinyalakan 💡\n\nSistem iOS (iPhone) atau Browser Anda saat ini memblokir akses senter dari Web. Coba gunakan Google Chrome terbaru.");
+      } else {
+        alert("Perangkat ini tidak mendukung kontrol senter dari Browser (Khusus Android/Chrome).");
+      }
+    } catch (err) {
+      console.error("Gagal menyalakan senter:", err);
+      // Fallback ke library jika raw access ditolak
+      if (scannerRef.current) {
+        scannerRef.current.applyVideoConstraints({ advanced: [{ torch: newState }] })
+          .then(() => setIsTorchOn(newState))
+          .catch(() => alert("Senter gagal dinyalakan. HP atau Browser Anda memblokir fitur ini."));
       }
     }
   };
@@ -269,11 +277,11 @@ export default function Pemeriksaan() {
                   <div className="absolute w-full h-0.5 bg-red-500/80 top-1/2 left-0 transform -translate-y-1/2 animate-pulse shadow-[0_0_8px_rgba(239,68,68,1)]"></div>
                 </div>
                 <p className="text-white text-xs font-bold mt-8 bg-black/70 px-4 py-2 rounded-full tracking-wide text-center leading-relaxed backdrop-blur-sm border border-white/10">
-                  Masukkan HANYA SATU Barcode ke dalam kotak.<br/>Jauhkan layar 10-15cm.
+                  Pastikan fokus. Barcode sekecil apapun akan tertangkap.
                 </p>
               </div>
 
-              <button onClick={toggleTorch} className={`absolute bottom-6 flex items-center justify-center gap-2 px-5 py-2.5 rounded-full font-bold text-sm transition-all shadow-lg border ${isTorchOn ? 'bg-amber-400 text-amber-900 border-amber-300' : 'bg-slate-800/80 text-white border-white/20 hover:bg-[#1A73E8]'}`} title="Senter Kamera">
+              <button onClick={toggleTorch} className={`absolute bottom-6 flex items-center justify-center gap-2 px-5 py-2.5 rounded-full font-bold text-sm transition-all shadow-lg border pointer-events-auto ${isTorchOn ? 'bg-amber-400 text-amber-900 border-amber-300' : 'bg-slate-800/80 text-white border-white/20 hover:bg-[#1A73E8]'}`} title="Senter Kamera">
                 {isTorchOn ? '💡 Matikan Senter' : '🔦 Nyalakan Senter'}
               </button>
             </div>
