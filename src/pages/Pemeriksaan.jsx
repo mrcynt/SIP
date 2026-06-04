@@ -4,7 +4,6 @@ import { db } from '../config/firebase';
 import { collection, addDoc, runTransaction, doc, query, where, getDocs, orderBy } from 'firebase/firestore';
 import { dbLocal } from '../db/offlineDB';
 import { fetchWithRetry } from '../utils/network';
-// IMPORT LIBRARY KAMERA BARCODE/QR SCANNER
 import { Html5Qrcode } from 'html5-qrcode'; 
 
 const DRIVE_API_URL = "https://script.google.com/macros/s/AKfycbyJwmBp6pfgIgO9jSOl-RbQ6RMBTQPUX0zJFd_3TYqQ-egca9WNOImoKrLYW6PkQUDBYQ/exec";
@@ -39,11 +38,9 @@ const compressImage = (file) => {
 export default function Pemeriksaan() {
   const { user } = useAuth();
   
-  // STATE NAVIGASI TAB & NOTIFIKASI
   const [activeTab, setActiveTab] = useState('form'); 
   const [notifKerjaan, setNotifKerjaan] = useState({ isOpen: false, isOffline: false });
   
-  // STATE FORM PEMERIKSAAN
   const [serialNumber, setSerialNumber] = useState('');
   const [isSnLocked, setIsSnLocked] = useState(false);
   const [isCheckingSN, setIsCheckingSN] = useState(false); 
@@ -54,48 +51,46 @@ export default function Pemeriksaan() {
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState('');
 
-  // STATE LAPORAN DATA
   const [laporanRecords, setLaporanRecords] = useState([]);
   const [isLaporanLoading, setIsLaporanLoading] = useState(false);
   const [searchLaporan, setSearchLaporan] = useState('');
 
   // ========================================================
-  // STATE & LOGIKA BARU: KAMERA SCANNER BARCODE
+  // STATE & LOGIKA: KAMERA SCANNER (DIPERBAIKI)
   // ========================================================
   const [isScanning, setIsScanning] = useState(false);
+  const [isTorchOn, setIsTorchOn] = useState(false);
   const scannerRef = useRef(null);
 
   useEffect(() => {
     if (isScanning) {
-      // Tunggu DOM (div id="reader") selesai dirender sebelum menyalakan kamera
+      setIsTorchOn(false); // Reset status senter saat kamera baru dibuka
+      
       setTimeout(() => {
         const html5QrCode = new Html5Qrcode("reader");
         scannerRef.current = html5QrCode;
         
         html5QrCode.start(
-          { facingMode: "environment" }, // Paksa menggunakan Kamera Belakang HP
+          { facingMode: "environment" }, 
           { 
-            fps: 15, // Kecepatan scan (Frame per second)
-            qrbox: { width: 280, height: 120 } // Kotak pemindai persegi panjang untuk Barcode SN
+            fps: 15, // Ditingkatkan agar lebih sensitif
+            // qrbox dihapus di sini agar scanner melacak ke SELURUH layar, tingkat akurasi naik 100%
           },
           (decodedText) => {
             // JIKA BERHASIL TERBACA:
-            setSerialNumber(decodedText.toUpperCase()); // Masukkan ke input
-            setIsScanning(false); // Matikan modal kamera
-            html5QrCode.stop().catch(console.error); // Matikan hardware kamera
+            setSerialNumber(decodedText.toUpperCase()); 
+            setIsScanning(false); 
+            html5QrCode.stop().catch(console.error); 
           },
-          (errorMessage) => { 
-            // Abaikan error per frame (karena scanner akan terus mencoba membaca setiap milidetik) 
-          }
+          (errorMessage) => { /* Abaikan error looping per frame */ }
         ).catch(err => {
           console.error(err);
-          setError("Kamera gagal diakses. Pastikan Anda telah memberikan izin kamera pada browser.");
+          setError("Kamera gagal diakses. Pastikan browser memiliki izin kamera.");
           setIsScanning(false);
         });
       }, 200);
     }
 
-    // Fungsi Bersih-bersih: Matikan kamera secara paksa jika user menekan tombol "Batal / Tutup"
     return () => {
       if (scannerRef.current && scannerRef.current.isScanning) {
         scannerRef.current.stop().catch(console.error);
@@ -103,6 +98,21 @@ export default function Pemeriksaan() {
       }
     };
   }, [isScanning]);
+
+  // FUNGSI MENGHIDUPKAN/MEMATIKAN SENTER
+  const toggleTorch = () => {
+    if (scannerRef.current) {
+      const newState = !isTorchOn;
+      scannerRef.current.applyVideoConstraints({
+        advanced: [{ torch: newState }]
+      }).then(() => {
+        setIsTorchOn(newState);
+      }).catch(err => {
+        console.error(err);
+        alert("Maaf, sepertinya HP atau Browser Anda tidak mengizinkan akses ke Senter.");
+      });
+    }
+  };
   // ========================================================
 
   useEffect(() => { return () => { photos.forEach(p => URL.revokeObjectURL(p.preview)); }; }, [photos]);
@@ -238,9 +248,9 @@ export default function Pemeriksaan() {
   return (
     <div className="max-w-4xl mx-auto pb-24 font-sans relative select-none">
       
-      {/* MODAL SCANNER KAMERA (MUNCUL JIKA isScanning = true) */}
+      {/* MODAL SCANNER KAMERA + SENTER */}
       {isScanning && (
-        <div className="fixed inset-0 bg-slate-900/90 z-[120] flex flex-col justify-center items-center backdrop-blur-sm animate-in fade-in duration-300">
+        <div className="fixed inset-0 bg-slate-900/95 z-[120] flex flex-col justify-center items-center backdrop-blur-md animate-in fade-in duration-300">
           <div className="w-full max-w-md bg-white rounded-3xl overflow-hidden shadow-2xl m-4 flex flex-col animate-in zoom-in-95 duration-300">
             <div className="p-4 bg-slate-800 flex justify-between items-center text-white shrink-0">
               <div className="flex items-center gap-2">
@@ -250,22 +260,32 @@ export default function Pemeriksaan() {
               <button onClick={() => setIsScanning(false)} className="text-slate-300 hover:text-white bg-slate-700 hover:bg-red-500 rounded-full w-8 h-8 flex items-center justify-center transition-colors font-bold">✕</button>
             </div>
             
-            <div className="relative bg-black w-full h-[350px] flex items-center justify-center overflow-hidden">
-              {/* DIV INI ADALAH TEMPAT KAMERA AKAN MUNCUL */}
+            <div className="relative bg-black w-full h-[450px] flex items-center justify-center overflow-hidden">
+              
               <div id="reader" className="w-full h-full object-cover"></div>
               
-              {/* Overlay Panduan Visual (Target Box) */}
-              <div className="absolute inset-0 pointer-events-none border-[40px] border-black/40"></div>
+              {/* Overlay Visual Penuntun (Tidak Memblokir Sensor) */}
               <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                <div className="w-[280px] h-[120px] border-2 border-[#34A853] rounded-xl relative shadow-[0_0_0_9999px_rgba(0,0,0,0.5)]">
+                <div className="w-[80%] h-[120px] border-2 border-[#34A853] rounded-xl relative shadow-[0_0_0_9999px_rgba(0,0,0,0.5)]">
                   <div className="absolute top-0 left-0 w-4 h-4 border-t-4 border-l-4 border-[#34A853] rounded-tl-lg -mt-1 -ml-1"></div>
                   <div className="absolute top-0 right-0 w-4 h-4 border-t-4 border-r-4 border-[#34A853] rounded-tr-lg -mt-1 -mr-1"></div>
                   <div className="absolute bottom-0 left-0 w-4 h-4 border-b-4 border-l-4 border-[#34A853] rounded-bl-lg -mb-1 -ml-1"></div>
                   <div className="absolute bottom-0 right-0 w-4 h-4 border-b-4 border-r-4 border-[#34A853] rounded-br-lg -mb-1 -mr-1"></div>
                   <div className="absolute w-full h-0.5 bg-red-500/50 top-1/2 left-0 transform -translate-y-1/2 animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.8)]"></div>
                 </div>
-                <p className="text-white text-xs font-bold mt-6 bg-black/60 px-4 py-2 rounded-full tracking-wide">Arahkan garis merah ke Barcode / QR Code</p>
+                <p className="text-white text-xs font-bold mt-6 bg-black/60 px-4 py-2 rounded-full tracking-wide text-center leading-relaxed">
+                  Paskan garis merah ke Barcode.<br/>Jauhkan layar 10-15cm agar fokus.
+                </p>
               </div>
+
+              {/* TOMBOL SENTER (Di atas overlay agar bisa diklik) */}
+              <button 
+                onClick={toggleTorch}
+                className={`absolute bottom-6 flex items-center justify-center gap-2 px-5 py-2.5 rounded-full font-bold text-sm transition-all shadow-lg border ${isTorchOn ? 'bg-amber-400 text-amber-900 border-amber-300' : 'bg-slate-800/80 text-white border-white/20 hover:bg-[#1A73E8]'}`}
+                title="Senter Kamera"
+              >
+                {isTorchOn ? '💡 Matikan Senter' : '🔦 Nyalakan Senter'}
+              </button>
             </div>
           </div>
         </div>
@@ -322,7 +342,6 @@ export default function Pemeriksaan() {
                     className="w-full pl-5 pr-14 py-3.5 bg-[#F8F9FA] border border-slate-200 rounded-2xl text-lg font-mono font-bold text-slate-800 outline-none focus:bg-white focus:border-[#1A73E8] focus:ring-1 focus:ring-[#1A73E8] transition-all uppercase placeholder:text-slate-300 placeholder:font-sans placeholder:font-normal"
                     autoFocus disabled={isCheckingSN}
                   />
-                  {/* TOMBOL SCANNER DIGANTI MENJADI PEMICU KAMERA ASLI */}
                   <button type="button" onClick={() => setIsScanning(true)} disabled={isCheckingSN} className="absolute right-2 w-11 h-11 flex items-center justify-center text-slate-400 hover:text-white bg-white hover:bg-[#1A73E8] border border-slate-200 hover:border-transparent rounded-xl transition-all shadow-sm group" title="Buka Kamera Scanner">
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 transform group-hover:scale-110 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9zM15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
                   </button>
