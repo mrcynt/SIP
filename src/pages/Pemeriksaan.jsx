@@ -65,63 +65,20 @@ export default function Pemeriksaan() {
   // ========================================================
   const [isScanning, setIsScanning] = useState(false);
   const [isTorchOn, setIsTorchOn] = useState(false);
-  const [boxWidth, setBoxWidth] = useState(400);
-const [boxHeight, setBoxHeight] = useState(180);
+  const [boxWidth, setBoxWidth] = useState(380);
+  const [boxHeight, setBoxHeight] = useState(120);
   const scannerRef = useRef(null);
-const enableAutoFocus = async () => {
-  try {
-    const track = scannerRef.current?.getRunningTrack();
 
-    if (!track) return;
-
-    const capabilities = track.getCapabilities?.();
-
-    if (capabilities?.focusMode) {
-      await track.applyConstraints({
-        advanced: [
-          {
-            focusMode: "continuous"
-          }
-        ]
-      });
-    }
-  } catch (err) {
-    console.log("Autofocus tidak didukung:", err);
-  }
-};
-
-const enableZoom = async () => {
-  try {
-    const track = scannerRef.current?.getRunningTrack();
-
-    if (!track) return;
-
-    const capabilities = track.getCapabilities?.();
-
-    if (capabilities?.zoom) {
-      await track.applyConstraints({
-        advanced: [
-          {
-            zoom: Math.min(2, capabilities.zoom.max)
-          }
-        ]
-      });
-    }
-  } catch (err) {
-    console.log("Zoom tidak didukung:", err);
-  }
-};
-  // Jalankan ulang kamera setiap kali status scan aktif ATAU ukuran kotak diubah oleh user
+  // Jalankan ulang kamera setiap kali status scan aktif
   useEffect(() => {
-  if (!isScanning) return;
+    if (!isScanning) return;
 
-  let html5QrCode;
+    let html5QrCode;
+    setIsTorchOn(false); // Reset torch status saat buka kamera baru
 
-  const startScanner = async () => {
-    try {
-      html5QrCode = new Html5Qrcode(
-        "reader",
-        {
+    const startScanner = async () => {
+      try {
+        html5QrCode = new Html5Qrcode("reader", {
           formatsToSupport: [
             Html5QrcodeSupportedFormats.CODE_128,
             Html5QrcodeSupportedFormats.CODE_39,
@@ -129,121 +86,104 @@ const enableZoom = async () => {
             Html5QrcodeSupportedFormats.EAN_8,
             Html5QrcodeSupportedFormats.QR_CODE
           ]
-        }
-      );
+        });
 
-      scannerRef.current = html5QrCode;
-navigator.mediaDevices.getUserMedia({
-  video: {
-    facingMode: "environment",
-    width: { ideal: 1920 },
-    height: { ideal: 1080 }
-  }
-});
-      await html5QrCode.start(
-        {
-          facingMode: {
-            ideal: "environment"
-          }
-        },
-        {
-          fps: 20,
+        scannerRef.current = html5QrCode;
 
-          aspectRatio: 1.777,
-
-          qrbox: {
-            width: 400,
-            height: 200
+        await html5QrCode.start(
+          { facingMode: "environment" },
+          {
+            fps: 15, // Dibuat 15 agar punya waktu ekstra untuk memproses barcode panjang
+            // qrbox dihapus agar area scan menggunakan full frame (sangat penting untuk barcode panjang)
+            disableFlip: false,
+            experimentalFeatures: {
+              useBarCodeDetectorIfSupported: true
+            }
           },
-
-          experimentalFeatures: {
-            useBarCodeDetectorIfSupported: true
+          async (decodedText) => {
+            setSerialNumber(decodedText.trim().toUpperCase());
+            try {
+              await html5QrCode.stop();
+            } catch (e) {
+              console.log("Stop scanner saat sukses error kecil:", e);
+            }
+            setIsScanning(false);
+          },
+          (errorMessage) => {
+            // Abaikan error frame scanning untuk mencegah console penuh
           }
-        },
+        );
 
-        async (decodedText) => {
-          setSerialNumber(
-            decodedText.trim().toUpperCase()
-          );
+        // Langsung terapkan fokus & sedikit zoom jika didukung
+        const track = html5QrCode.getRunningTrack?.();
+        if (track) {
+          const capabilities = track.getCapabilities?.() || {};
+          const advancedConstraints = [];
 
-          try {
-            await html5QrCode.stop();
-          } catch {}
+          if (capabilities.focusMode?.includes("continuous")) {
+            advancedConstraints.push({ focusMode: "continuous" });
+          }
+          if (capabilities.zoom) {
+            // Pakai max 1.5x zoom supaya resolusi tetap cukup tajam untuk barcode kecil
+            advancedConstraints.push({ zoom: Math.min(1.5, capabilities.zoom.max || 1) });
+          }
 
-          setIsScanning(false);
-        },
+          if (advancedConstraints.length > 0) {
+            try {
+              await track.applyConstraints({ advanced: advancedConstraints });
+            } catch (err) {
+              console.log("Gagal apply auto-focus/zoom:", err);
+            }
+          }
+        }
 
-        () => {}
-      );
+      } catch (err) {
+        console.error("Gagal inisialisasi scanner:", err);
+        setError("Kamera gagal diakses. Pastikan izin kamera sudah diberikan.");
+        setIsScanning(false);
+      }
+    };
 
-      setTimeout(async () => {
-        await enableAutoFocus();
-        await enableZoom();
-      }, 1500);
+    startScanner();
+
+    return () => {
+      if (html5QrCode && html5QrCode.isScanning) {
+        html5QrCode.stop().catch(() => {});
+      }
+    };
+  }, [isScanning]);
+
+  // FUNGSI SENTER YANG LEBIH AMAN
+  const toggleTorch = async () => {
+    try {
+      const track = scannerRef.current?.getRunningTrack?.();
+
+      if (!track) {
+        alert("Kamera belum aktif secara sempurna. Tunggu sebentar.");
+        return;
+      }
+
+      // Gunakan getCapabilities yang aman
+      const capabilities = typeof track.getCapabilities === "function" ? track.getCapabilities() : {};
+
+      if (!capabilities.torch) {
+        alert("Perangkat/Browser ini tidak mendukung fitur senter via web.");
+        return;
+      }
+
+      const nextState = !isTorchOn;
+
+      await track.applyConstraints({
+        advanced: [{ torch: nextState }]
+      });
+
+      setIsTorchOn(nextState);
 
     } catch (err) {
-      console.error(err);
-
-      setError(
-        "Kamera gagal diakses. Pastikan izin kamera sudah diberikan."
-      );
-
-      setIsScanning(false);
+      console.error("Gagal menyalakan senter:", err);
+      alert("Gagal mengubah status senter. Coba muat ulang kamera.");
     }
   };
-
-  startScanner();
-
-  return () => {
-    if (html5QrCode) {
-      html5QrCode
-        .stop()
-        .catch(() => {});
-    }
-  };
-}, [isScanning]);
-
-  // FUNGSI SENTER AMAN (KEMBALI KE METODE AWAL YANG MENYALA)
-  const toggleTorch = async () => {
-  try {
-    const track =
-      scannerRef.current?.getRunningTrack();
-
-    if (!track) {
-      alert("Kamera belum aktif.");
-      return;
-    }
-
-    const capabilities =
-      track.getCapabilities?.();
-
-    if (!capabilities?.torch) {
-      alert(
-        "HP ini tidak mendukung torch API."
-      );
-      return;
-    }
-
-    const nextState = !isTorchOn;
-
-    await track.applyConstraints({
-      advanced: [
-        {
-          torch: nextState
-        }
-      ]
-    });
-
-    setIsTorchOn(nextState);
-
-  } catch (err) {
-    console.error(err);
-
-    alert(
-      "Gagal mengubah status senter."
-    );
-  }
-};
   // ========================================================
 
   useEffect(() => { return () => { photos.forEach(p => URL.revokeObjectURL(p.preview)); }; }, [photos]);
@@ -360,7 +300,7 @@ navigator.mediaDevices.getUserMedia({
             <div className="relative bg-black w-full h-[360px] flex items-center justify-center overflow-hidden shrink-0">
               <div id="reader" className="w-full h-full object-cover"></div>
               
-              {/* TARGET BOX OVERLAY (Ukurannya Mengikuti State boxWidth & boxHeight) */}
+              {/* TARGET BOX OVERLAY (Hanya Visual, Bukan Crop Asli) */}
               <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                 <div style={{ width: `${boxWidth}px`, height: `${boxHeight}px` }} className="border-2 border-[#34A853] relative shadow-[0_0_0_9999px_rgba(0,0,0,0.65)] transition-all duration-150">
                   <div className="absolute top-0 left-0 w-4 h-4 border-t-4 border-l-4 border-[#34A853] -mt-1 -ml-1"></div>
@@ -375,7 +315,7 @@ navigator.mediaDevices.getUserMedia({
             {/* PANEL KONTROL UKURAN & SENTER INDEPENDEN */}
             <div className="p-4 bg-slate-50 border-t border-slate-100 flex flex-col gap-3 shrink-0">
               <div className="flex justify-between items-center text-xs font-bold text-slate-600">
-                <span>Sesuaikan Kotak Bidik Di Lapangan:</span>
+                <span>Sesuaikan Panduan Bidik:</span>
                 <button type="button" onClick={toggleTorch} className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border text-xs font-bold transition-all ${isTorchOn ? 'bg-amber-400 text-amber-900 border-amber-300 shadow-sm' : 'bg-slate-800 text-white border-transparent'}`}>
                   {isTorchOn ? '💡 Senter Menyala' : '🔦 Saklar Senter'}
                 </button>
