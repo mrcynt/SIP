@@ -4,7 +4,10 @@ import { db } from '../config/firebase';
 import { collection, addDoc, runTransaction, doc, query, where, getDocs, orderBy } from 'firebase/firestore';
 import { dbLocal } from '../db/offlineDB';
 import { fetchWithRetry } from '../utils/network';
-import { Html5Qrcode } from 'html5-qrcode'; 
+import {
+  Html5Qrcode,
+  Html5QrcodeSupportedFormats
+} from "html5-qrcode";
 
 const DRIVE_API_URL = "https://script.google.com/macros/s/AKfycbyJwmBp6pfgIgO9jSOl-RbQ6RMBTQPUX0zJFd_3TYqQ-egca9WNOImoKrLYW6PkQUDBYQ/exec";
 
@@ -62,60 +65,185 @@ export default function Pemeriksaan() {
   // ========================================================
   const [isScanning, setIsScanning] = useState(false);
   const [isTorchOn, setIsTorchOn] = useState(false);
-  const [boxWidth, setBoxWidth] = useState(320);  // Lebar awal standar
-  const [boxHeight, setBoxHeight] = useState(100); // Tinggi awal standar
+  const [boxWidth, setBoxWidth] = useState(400);
+const [boxHeight, setBoxHeight] = useState(180);
   const scannerRef = useRef(null);
+const enableAutoFocus = async () => {
+  try {
+    const track = scannerRef.current?.getRunningTrack();
 
-  // Jalankan ulang kamera setiap kali status scan aktif ATAU ukuran kotak diubah oleh user
-  useEffect(() => {
-    if (isScanning) {
-      setTimeout(() => {
-        const html5QrCode = new Html5Qrcode("reader");
-        scannerRef.current = html5QrCode;
-        
-        html5QrCode.start(
-          { facingMode: "environment" }, 
-          { 
-            fps: 15,
-            qrbox: { width: boxWidth, height: boxHeight }, // Menggunakan state dinamis buatan user
-            disableFlip: false
-          },
-          (decodedText) => {
-            setSerialNumber(decodedText.toUpperCase()); 
-            setIsScanning(false); 
-            html5QrCode.stop().catch(console.error); 
-          },
-          (errorMessage) => { /* Abaikan error loop */ }
-        ).catch(err => {
-          console.error(err);
-          setError("Kamera gagal diakses. Pastikan browser memiliki izin kamera.");
-          setIsScanning(false);
-        });
-      }, 200);
-    }
+    if (!track) return;
 
-    return () => {
-      if (scannerRef.current && scannerRef.current.isScanning) {
-        scannerRef.current.stop().catch(console.error);
-        scannerRef.current = null;
-      }
-    };
-  }, [isScanning, boxWidth, boxHeight]); // Memicu auto-restart mulus saat tombol ukuran ditekan
+    const capabilities = track.getCapabilities?.();
 
-  // FUNGSI SENTER AMAN (KEMBALI KE METODE AWAL YANG MENYALA)
-  const toggleTorch = () => {
-    if (scannerRef.current && scannerRef.current.isScanning) {
-      const newState = !isTorchOn;
-      scannerRef.current.applyVideoConstraints({
-        advanced: [{ torch: newState }]
-      }).then(() => {
-        setIsTorchOn(newState);
-      }).catch(err => {
-        console.error("Gagal ubah status senter:", err);
-        alert("Senter gagal merespon. Pastikan Anda menggunakan Chrome di Android.");
+    if (capabilities?.focusMode) {
+      await track.applyConstraints({
+        advanced: [
+          {
+            focusMode: "continuous"
+          }
+        ]
       });
     }
+  } catch (err) {
+    console.log("Autofocus tidak didukung:", err);
+  }
+};
+
+const enableZoom = async () => {
+  try {
+    const track = scannerRef.current?.getRunningTrack();
+
+    if (!track) return;
+
+    const capabilities = track.getCapabilities?.();
+
+    if (capabilities?.zoom) {
+      await track.applyConstraints({
+        advanced: [
+          {
+            zoom: Math.min(2, capabilities.zoom.max)
+          }
+        ]
+      });
+    }
+  } catch (err) {
+    console.log("Zoom tidak didukung:", err);
+  }
+};
+  // Jalankan ulang kamera setiap kali status scan aktif ATAU ukuran kotak diubah oleh user
+  useEffect(() => {
+  if (!isScanning) return;
+
+  let html5QrCode;
+
+  const startScanner = async () => {
+    try {
+      html5QrCode = new Html5Qrcode(
+        "reader",
+        {
+          formatsToSupport: [
+            Html5QrcodeSupportedFormats.CODE_128,
+            Html5QrcodeSupportedFormats.CODE_39,
+            Html5QrcodeSupportedFormats.EAN_13,
+            Html5QrcodeSupportedFormats.EAN_8,
+            Html5QrcodeSupportedFormats.QR_CODE
+          ]
+        }
+      );
+
+      scannerRef.current = html5QrCode;
+navigator.mediaDevices.getUserMedia({
+  video: {
+    facingMode: "environment",
+    width: { ideal: 1920 },
+    height: { ideal: 1080 }
+  }
+});
+      await html5QrCode.start(
+        {
+          facingMode: {
+            ideal: "environment"
+          }
+        },
+        {
+          fps: 20,
+
+          aspectRatio: 1.777,
+
+          qrbox: {
+            width: 400,
+            height: 200
+          },
+
+          experimentalFeatures: {
+            useBarCodeDetectorIfSupported: true
+          }
+        },
+
+        async (decodedText) => {
+          setSerialNumber(
+            decodedText.trim().toUpperCase()
+          );
+
+          try {
+            await html5QrCode.stop();
+          } catch {}
+
+          setIsScanning(false);
+        },
+
+        () => {}
+      );
+
+      setTimeout(async () => {
+        await enableAutoFocus();
+        await enableZoom();
+      }, 1500);
+
+    } catch (err) {
+      console.error(err);
+
+      setError(
+        "Kamera gagal diakses. Pastikan izin kamera sudah diberikan."
+      );
+
+      setIsScanning(false);
+    }
   };
+
+  startScanner();
+
+  return () => {
+    if (html5QrCode) {
+      html5QrCode
+        .stop()
+        .catch(() => {});
+    }
+  };
+}, [isScanning]);
+
+  // FUNGSI SENTER AMAN (KEMBALI KE METODE AWAL YANG MENYALA)
+  const toggleTorch = async () => {
+  try {
+    const track =
+      scannerRef.current?.getRunningTrack();
+
+    if (!track) {
+      alert("Kamera belum aktif.");
+      return;
+    }
+
+    const capabilities =
+      track.getCapabilities?.();
+
+    if (!capabilities?.torch) {
+      alert(
+        "HP ini tidak mendukung torch API."
+      );
+      return;
+    }
+
+    const nextState = !isTorchOn;
+
+    await track.applyConstraints({
+      advanced: [
+        {
+          torch: nextState
+        }
+      ]
+    });
+
+    setIsTorchOn(nextState);
+
+  } catch (err) {
+    console.error(err);
+
+    alert(
+      "Gagal mengubah status senter."
+    );
+  }
+};
   // ========================================================
 
   useEffect(() => { return () => { photos.forEach(p => URL.revokeObjectURL(p.preview)); }; }, [photos]);
