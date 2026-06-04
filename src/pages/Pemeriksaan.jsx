@@ -48,7 +48,6 @@ export default function Pemeriksaan() {
   const [uploadMode, setUploadMode] = useState('kategori'); 
   const [photos, setPhotos] = useState([]); 
   
-  // STATE BARU: PENGONTROL MODAL PILIHAN KAMERA/GALERI
   const [mediaSheet, setMediaSheet] = useState({ isOpen: false, kategori: null });
   
   const [isUploading, setIsUploading] = useState(false);
@@ -59,7 +58,7 @@ export default function Pemeriksaan() {
   const [searchLaporan, setSearchLaporan] = useState('');
 
   // ========================================================
-  // KAMERA DENGAN KOTAK DIPERBESAR & LEBIH SENSITIF (20 FPS)
+  // KAMERA & FUNGSI SENTER TAHAN BANTING (DOUBLE TRICK)
   // ========================================================
   const [isScanning, setIsScanning] = useState(false);
   const [isTorchOn, setIsTorchOn] = useState(false);
@@ -74,16 +73,13 @@ export default function Pemeriksaan() {
         
         html5QrCode.start(
           { facingMode: "environment" }, 
-          { 
-            fps: 20, // LEBIH SENSITIF MENANGKAP GAMBAR
-            qrbox: { width: 320, height: 140 } // DIPERBESAR AGAR LEBIH GAMPANG PAS
-          },
+          { fps: 20, qrbox: { width: 320, height: 140 } },
           (decodedText) => {
             setSerialNumber(decodedText.toUpperCase()); 
             setIsScanning(false); 
             html5QrCode.stop().catch(console.error); 
           },
-          (errorMessage) => { /* Abaikan error loop per detik */ }
+          (errorMessage) => { /* Abaikan error loop */ }
         ).catch(err => {
           console.error(err);
           setError("Kamera gagal diakses. Pastikan browser memiliki izin kamera.");
@@ -99,15 +95,25 @@ export default function Pemeriksaan() {
     };
   }, [isScanning]);
 
-  const toggleTorch = () => {
-    if (scannerRef.current) {
-      const newState = !isTorchOn;
-      scannerRef.current.applyVideoConstraints({ advanced: [{ torch: newState }] })
-        .then(() => { setIsTorchOn(newState); })
-        .catch(err => {
-          console.error(err);
-          alert("Maaf, sepertinya HP Anda tidak mendukung pengontrolan Senter via Web.");
-        });
+  const toggleTorch = async () => {
+    if (!scannerRef.current) return;
+    
+    const newState = !isTorchOn;
+    
+    try {
+      // Trik 1: Format Standar Chrome Android
+      await scannerRef.current.applyVideoConstraints({ advanced: [{ torch: newState }] });
+      setIsTorchOn(newState);
+    } catch (err1) {
+      try {
+        // Trik 2: Format Alternatif (Bypass)
+        await scannerRef.current.applyVideoConstraints({ torch: newState });
+        setIsTorchOn(newState);
+      } catch (err2) {
+        console.error("Senter gagal:", err2);
+        // Tampilkan peringatan jika HP benar-benar memblokir perangkat keras
+        alert("Senter gagal dinyalakan 💡\n\nSistem iOS (iPhone) atau Browser Anda saat ini memblokir akses senter dari Web. Coba gunakan Google Chrome terbaru.");
+      }
     }
   };
   // ========================================================
@@ -254,7 +260,6 @@ export default function Pemeriksaan() {
             <div className="relative bg-black w-full h-[450px] flex items-center justify-center overflow-hidden">
               <div id="reader" className="w-full h-full object-cover"></div>
               
-              {/* TARGET BOX: SEKARANG UKURAN 320x140 AGAR LEBIH LEGA */}
               <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                 <div className="w-[320px] h-[140px] border-2 border-[#34A853] relative shadow-[0_0_0_9999px_rgba(0,0,0,0.6)]">
                   <div className="absolute top-0 left-0 w-4 h-4 border-t-4 border-l-4 border-[#34A853] -mt-1 -ml-1"></div>
@@ -276,9 +281,7 @@ export default function Pemeriksaan() {
         </div>
       )}
 
-      {/* ========================================================
-          MODAL PILIHAN KAMERA ATAU GALERI (BOTTOM SHEET)
-          ======================================================== */}
+      {/* MODAL PILIHAN KAMERA/GALERI */}
       {mediaSheet.isOpen && (
         <div className="fixed inset-0 bg-slate-900/60 z-[110] flex justify-center items-end sm:items-center p-0 sm:p-4 backdrop-blur-sm animate-in fade-in duration-300">
           <div className="bg-white w-full max-w-sm rounded-t-3xl sm:rounded-3xl p-6 pb-10 sm:pb-6 shadow-2xl animate-in slide-in-from-bottom-full sm:zoom-in-95 duration-300">
@@ -291,22 +294,14 @@ export default function Pemeriksaan() {
             </div>
             
             <div className="flex flex-col gap-3">
-              {/* TOMBOL KAMERA (Otomatis Buka Kamera Langsung berkat capture="environment") */}
               <label className="w-full flex items-center justify-center gap-3 bg-[#1A73E8] text-white py-4 rounded-2xl font-bold cursor-pointer hover:bg-[#1557B0] transition-colors shadow-sm active:scale-95">
                 <span className="text-xl">📷</span> Ambil Foto Langsung
-                <input 
-                  type="file" accept="image/*" capture="environment" className="hidden" 
-                  onChange={(e) => { handleKategoriChange(mediaSheet.kategori, e); setMediaSheet({isOpen:false, kategori:null}); }} 
-                />
+                <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => { handleKategoriChange(mediaSheet.kategori, e); setMediaSheet({isOpen:false, kategori:null}); }} />
               </label>
               
-              {/* TOMBOL GALERI */}
               <label className="w-full flex items-center justify-center gap-3 bg-[#F8F9FA] text-slate-700 border border-slate-200 py-4 rounded-2xl font-bold cursor-pointer hover:bg-slate-100 transition-colors shadow-sm active:scale-95">
                 <span className="text-xl">🖼️</span> Pilih dari Galeri HP
-                <input 
-                  type="file" accept="image/*" className="hidden" 
-                  onChange={(e) => { handleKategoriChange(mediaSheet.kategori, e); setMediaSheet({isOpen:false, kategori:null}); }} 
-                />
+                <input type="file" accept="image/*" className="hidden" onChange={(e) => { handleKategoriChange(mediaSheet.kategori, e); setMediaSheet({isOpen:false, kategori:null}); }} />
               </label>
             </div>
           </div>
@@ -399,7 +394,6 @@ export default function Pemeriksaan() {
                   {KATEGORI_WAJIB.map((kat) => {
                     const photo = photos.find(p => p.kategori === kat);
                     return (
-                      // TAG LABEL DIUBAH MENJADI DIV AGAR BISA MEMANGGIL MODAL PILIHAN KAMERA/GALERI
                       <div 
                         key={kat} 
                         onClick={() => setMediaSheet({ isOpen: true, kategori: kat })}
