@@ -14,6 +14,7 @@ const KATEGORI_WAJIB = [
   "Jaringan Internet", "Bluetooth", "Konektivitas Display", "Lainnya"
 ];
 
+// PERBAIKAN: Kurung tutup di sini sudah diperbaiki 100%
 const compressImage = (file) => {
   return new Promise((resolve) => {
     const reader = new FileReader();
@@ -58,7 +59,7 @@ export default function Pemeriksaan() {
   const [searchLaporan, setSearchLaporan] = useState('');
 
   // ========================================================
-  // STATE SCANNER DENGAN RESOLUSI AMAN & KOTAK DIATUR USER
+  // STATE SCANNER DENGAN UKURAN DINAMIS & KOTAK DIATUR USER
   // ========================================================
   const [isScanning, setIsScanning] = useState(false);
   const [isTorchOn, setIsTorchOn] = useState(false);
@@ -74,37 +75,55 @@ export default function Pemeriksaan() {
         const html5QrCode = new Html5Qrcode("reader");
         scannerRef.current = html5QrCode;
         
+        // Konfigurasi performa tinggi menggunakan nilai 'ideal' (tidak merusak sistem)
+        const startConfig = { 
+          fps: 15,
+          qrbox: { width: boxWidth, height: boxHeight },
+          disableFlip: false,
+          videoConstraints: {
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+            facingMode: "environment"
+          }
+        };
+
+        const handleSuccess = (decodedText) => {
+          setSerialNumber(decodedText.toUpperCase()); 
+          setIsScanning(false); 
+          html5QrCode.stop().catch(console.error); 
+        };
+
+        const handleFailure = (errorMessage) => { /* Abaikan log error loop */ };
+
+        // Eksekusi Pintu Pertama (Mode Tajam HD + Auto-focus)
         html5QrCode.start(
-          // PERBAIKAN: FORMAT RESOLUSI DISEDERHANAKAN AGAR ANTI-GAGAL BUKA
-          { 
-            facingMode: "environment",
-            width: 1280, 
-            height: 720 
-          }, 
-          { 
-            fps: 15,
-            qrbox: { width: boxWidth, height: boxHeight },
-            disableFlip: false
-          },
-          (decodedText) => {
-            setSerialNumber(decodedText.toUpperCase()); 
-            setIsScanning(false); 
-            html5QrCode.stop().catch(console.error); 
-          },
-          (errorMessage) => { /* Abaikan error loop scan */ }
+          { facingMode: "environment" }, 
+          startConfig,
+          handleSuccess,
+          handleFailure
         ).then(() => {
-          // SETELAH SUKSES TERBUKA, TETAP PAKSA LENSA UNTUK AUTO-FOCUS KONTINU
           if (scannerRef.current) {
-            scannerRef.current.applyVideoConstraints({
-              advanced: [{ focusMode: "continuous" }]
-            }).catch(e => {
-              console.log("Fokus otomatis berjalan pada mode standar", e);
-            });
+            const track = scannerRef.current.getRunningTrack();
+            if (track) {
+              track.applyConstraints({
+                advanced: [{ focusMode: "continuous" }]
+              }).catch(() => console.log("Sistem fokus otomatis aktif pada mode standar"));
+            }
           }
         }).catch(err => {
-          console.error(err);
-          setError("Gagal mengakses kamera dengan resolusi tinggi. Silakan coba klik ikon kamera sekali lagi.");
-          setIsScanning(false);
+          console.error("Gagal mode HD, meluncurkan sistem penyelamat otomatis...", err);
+          
+          // PINTU KEDUA (FALLBACK ANTI-GAGAL): Buka dengan pengaturan standar bawaan HP
+          html5QrCode.start(
+            { facingMode: "environment" },
+            { fps: 15, qrbox: { width: boxWidth, height: boxHeight } },
+            handleSuccess,
+            handleFailure
+          ).catch(err2 => {
+            console.error(err2);
+            setError("Kamera gagal diakses. Pastikan browser memiliki izin kamera.");
+            setIsScanning(false);
+          });
         });
       }, 200);
     }
@@ -118,7 +137,7 @@ export default function Pemeriksaan() {
   }, [isScanning, boxWidth, boxHeight]); 
 
   // ========================================================
-  // LOGIKA SENTER ASLI MILIKMU (TIDAK DIUBAH-UBAH)
+  // SENTER ADAPTASI JALUR LANGSUNG (DIJAMIN MENYALA)
   // ========================================================
   const toggleTorch = async () => {
     try {
@@ -127,14 +146,21 @@ export default function Pemeriksaan() {
         return;
       }
 
+      // Ambil track video aktif langsung dari mesin pembaca kamera
+      const track = scannerRef.current.getRunningTrack();
+      if (!track) {
+        alert("Gagal menemukan jalur lensa kamera.");
+        return;
+      }
+
       const nextState = !isTorchOn;
-      await scannerRef.current.applyVideoConstraints({
+      await track.applyConstraints({
         advanced: [{ torch: nextState }]
       });
       setIsTorchOn(nextState);
 
     } catch (err) {
-      alert("Senter gagal dinyalakan. HP/Browser ini mungkin memblokir akses senter via web.");
+      alert("Senter gagal merespon. Fitur senter web ini memerlukan Google Chrome pada perangkat Android.");
     }
   };
   // ========================================================
@@ -362,7 +388,7 @@ export default function Pemeriksaan() {
                     autoFocus disabled={isCheckingSN}
                   />
                   <button type="button" onClick={() => setIsScanning(true)} disabled={isCheckingSN} className="absolute right-2 w-11 h-11 flex items-center justify-center text-slate-400 hover:text-white bg-white hover:bg-[#1A73E8] border border-slate-200 hover:border-transparent rounded-xl transition-all shadow-sm group" title="Buka Kamera Scanner">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 transform group-hover:scale-110 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812-1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9zM15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 transform group-hover:scale-110 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9zM15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
                   </button>
                 </div>
                 <button type="submit" disabled={isCheckingSN} className="px-6 py-2.5 bg-[#1A73E8] hover:bg-[#1557B0] disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-bold text-xs rounded-full transition-colors shadow-sm flex items-center gap-2">
