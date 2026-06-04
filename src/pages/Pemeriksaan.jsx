@@ -1,0 +1,461 @@
+import { useState, useEffect } from 'react';
+import { useAuth } from '../context/AuthContext';
+import { db } from '../config/firebase';
+// Tambahkan orderBy untuk mengurutkan laporan data
+import { collection, addDoc, runTransaction, doc, query, where, getDocs, orderBy } from 'firebase/firestore';
+import { dbLocal } from '../db/offlineDB';
+import { fetchWithRetry } from '../utils/network';
+
+const DRIVE_API_URL = "https://script.google.com/macros/s/AKfycbyJwmBp6pfgIgO9jSOl-RbQ6RMBTQPUX0zJFd_3TYqQ-egca9WNOImoKrLYW6PkQUDBYQ/exec";
+
+const KATEGORI_WAJIB = [
+  "Serial Number Fisik", "Serial Number Kardus", "Serial Number Remote",
+  "System", "Memori", "Kamera", "CPU-Z", "Kelengkapan",
+  "Jaringan Internet", "Bluetooth", "Konektivitas Display", "Lainnya"
+];
+
+const compressImage = (file) => {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target.result;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 1200;
+        const scaleSize = MAX_WIDTH / img.width;
+        canvas.width = MAX_WIDTH;
+        canvas.height = img.height * scaleSize;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/jpeg', 0.6));
+      };
+    };
+  });
+};
+
+export default function Pemeriksaan() {
+  const { user } = useAuth();
+  
+  // ========================================================
+  // STATE NAVIGASI TAB & NOTIFIKASI
+  // ========================================================
+  const [activeTab, setActiveTab] = useState('form'); // 'form' atau 'laporan'
+  const [notifKerjaan, setNotifKerjaan] = useState({ isOpen: false, isOffline: false });
+  
+  // ========================================================
+  // STATE FORM PEMERIKSAAN
+  // ========================================================
+  const [serialNumber, setSerialNumber] = useState('');
+  const [isSnLocked, setIsSnLocked] = useState(false);
+  const [isCheckingSN, setIsCheckingSN] = useState(false); // Loading khusus saat ngecek SN
+  
+  const [uploadMode, setUploadMode] = useState('kategori'); 
+  const [photos, setPhotos] = useState([]); 
+  
+  const [isUploading, setIsUploading] = useState(false);
+  const [error, setError] = useState('');
+
+  // ========================================================
+  // STATE LAPORAN DATA (READ-ONLY)
+  // ========================================================
+  const [laporanRecords, setLaporanRecords] = useState([]);
+  const [isLaporanLoading, setIsLaporanLoading] = useState(false);
+  const [searchLaporan, setSearchLaporan] = useState('');
+
+  // Bersihkan memori foto jika batal
+  useEffect(() => {
+    return () => { photos.forEach(p => URL.revokeObjectURL(p.preview)); };
+  }, [photos]);
+
+  // Ambil data laporan saat tab 'laporan' dibuka
+  useEffect(() => {
+    if (activeTab === 'laporan') fetchLaporan();
+  }, [activeTab]);
+
+  const fetchLaporan = async () => {
+    setIsLaporanLoading(true);
+    try {
+      const qRec = query(collection(db, 'pemeriksaan_records'), orderBy('timestamp', 'desc'));
+      const snap = await getDocs(qRec);
+      setLaporanRecords(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    } catch (err) {
+      console.error("Gagal mengambil data laporan:", err);
+    } finally {
+      setIsLaporanLoading(false);
+    }
+  };
+
+  if (!user?.assignedUnit || !user?.assignedTahap) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] font-sans">
+        <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mb-4"><span className="text-4xl">🚷</span></div>
+        <h2 className="text-xl font-bold text-slate-800">Anda Belum Mendapat Tugas</h2>
+        <p className="text-slate-500 mt-2 text-center max-w-sm">Silakan hubungi Admin atau Supervisor untuk mengatur Unit dan Tahap pemeriksaan Anda hari ini.</p>
+      </div>
+    );
+  }
+
+  // ========================================================
+  // LOGIKA BARU: VALIDASI SN DI AWAL (SAAT TOMBOL KUNCI DITEKAN)
+  // ========================================================
+  const handleLockSN = async (e) => {
+    e?.preventDefault();
+    const finalSN = serialNumber.trim().toUpperCase();
+
+    if (!finalSN) {
+      setError("Silakan isi atau scan Serial Number terlebih dahulu.");
+      return;
+    }
+
+    setIsCheckingSN(true);
+    setError('');
+
+    try {
+      // 1. Cek Luring (Offline) di Antrean HP
+      const cekLokal = await dbLocal.antrean_pemeriksaan.toArray();
+      const isAdaDiLokal = cekLokal.some(item => item.serialNumber === finalSN);
+      
+      if (isAdaDiLokal) {
+        setError(`DITOLAK: SN [${finalSN}] sudah ada di antrean offline HP Anda! Menunggu sinyal untuk diunggah.`);
+        setIsCheckingSN(false);
+        return;
+      }
+
+      // 2. Cek Daring (Online) ke Server Pusat
+      if (navigator.onLine) {
+        const qCekOnline = query(collection(db, 'pemeriksaan_records'), where('serialNumber', '==', finalSN));
+        const snapCekOnline = await getDocs(qCekOnline);
+        
+        if (!snapCekOnline.empty) {
+          const ex = snapCekOnline.docs[0].data();
+          setError(`DITOLAK: Barang dengan SN [${finalSN}] sudah pernah diperiksa pada tahap ${ex.tahap} oleh petugas ${ex.petugas}. Tidak boleh periksa ganda!`);
+          setIsCheckingSN(false);
+          return; 
+        }
+      }
+
+      // Jika lolos semua pemeriksaan polisi data, baru pintu dibuka!
+      setIsSnLocked(true);
+    } catch (err) {
+      console.error(err);
+      setError("Terjadi gangguan saat memvalidasi SN. Periksa koneksi internet.");
+    } finally {
+      setIsCheckingSN(false);
+    }
+  };
+
+  const handleSimulasiScanQR = () => {
+    const mockSN = "SN" + Math.floor(100000 + Math.random() * 900000);
+    setSerialNumber(mockSN);
+    setError('');
+  };
+
+  // LOGIKA PENGELOLAAN MEDIA FILE
+  const handleKategoriChange = (kategori, e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const preview = URL.createObjectURL(file);
+    setPhotos(prev => {
+      const filtered = prev.filter(p => p.kategori !== kategori);
+      return [...filtered, { id: Date.now().toString(), file, preview, kategori }];
+    });
+  };
+
+  const handleBulkChange = (e) => {
+    const files = Array.from(e.target.files);
+    if (files.length === 0) return;
+    const newPhotos = files.map((file, i) => ({
+      id: `${Date.now()}_${i}`, file, preview: URL.createObjectURL(file), kategori: `Foto Pemeriksaan${i + 1}`
+    }));
+    setPhotos(prev => [...prev, ...newPhotos]);
+  };
+
+  const removePhoto = (id) => {
+    setPhotos(prev => prev.filter(p => p.id !== id));
+  };
+
+  const handleBatal = () => {
+    setSerialNumber('');
+    setIsSnLocked(false);
+    setPhotos([]);
+    setError('');
+  };
+
+  // EKSEKUSI PENYIMPANAN DATA
+  const handleSimpanData = async () => {
+    if (uploadMode === 'kategori') {
+      const isLengkap = KATEGORI_WAJIB.every(kat => photos.some(p => p.kategori === kat));
+      if (!isLengkap) return setError("Mohon lengkapi seluruh 12 kategori foto wajib!");
+    } else {
+      if (photos.length === 0) return setError("Mohon unggah minimal 1 foto!");
+    }
+
+    setIsUploading(true);
+    setError('');
+    
+    try {
+      const finalSerialNumber = serialNumber.trim().toUpperCase();
+      const pemeriksaanId = `${user.assignedUnit}_${user.assignedTahap}_${finalSerialNumber}`;
+      
+      // KONDISI LURING (OFFLINE)
+      if (!navigator.onLine) {
+        await dbLocal.antrean_pemeriksaan.add({ id: pemeriksaanId, unit: user.assignedUnit, tahap: user.assignedTahap, serialNumber: finalSerialNumber, petugas: user.username, timestamp: new Date().toISOString() });
+        for (const p of photos) {
+          await dbLocal.antrean_foto.add({ pemeriksaan_id: pemeriksaanId, kategori: p.kategori, file_blob: p.file });
+        }
+        
+        handleBatal(); 
+        setIsUploading(false);
+        setNotifKerjaan({ isOpen: true, isOffline: true });
+        return;
+      }
+
+      // KONDISI DARING (Karena validasi sudah di awal, di sini kita hanya kunci nomor urut & upload)
+      const counterDocRef = doc(db, 'counters', `${user.assignedUnit}_${user.assignedTahap}`);
+      let nomorUrutResmi = 1;
+      await runTransaction(db, async (transaction) => {
+        const counterDoc = await transaction.get(counterDocRef);
+        if (!counterDoc.exists()) { transaction.set(counterDocRef, { currentNumber: 1 }); nomorUrutResmi = 1; } 
+        else { const newNumber = counterDoc.data().currentNumber + 1; transaction.update(counterDocRef, { currentNumber: newNumber }); nomorUrutResmi = newNumber; }
+      });
+
+      const processedPhotos = await Promise.all(photos.map(async (p, index) => {
+        const base64 = await compressImage(p.file);
+        return { kategori: p.kategori, filename: `${p.kategori}_${index + 1}.jpg`, base64: base64 };
+      }));
+
+      const result = await fetchWithRetry(DRIVE_API_URL, {
+        redirect: "follow", method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({ unit: user.assignedUnit, tahap: user.assignedTahap, serialNumber: finalSerialNumber, nomorUrut: nomorUrutResmi, photos: processedPhotos })
+      }, 3, 15000);
+
+      if (result.status === 'success') {
+        await addDoc(collection(db, 'pemeriksaan_records'), { unit: user.assignedUnit, tahap: user.assignedTahap, nomorUrut: nomorUrutResmi, serialNumber: finalSerialNumber, formatTampil: `${nomorUrutResmi}. ${finalSerialNumber}`, petugas: user.username, timestamp: new Date().toISOString() });
+        
+        handleBatal(); 
+        setIsUploading(false); 
+        setNotifKerjaan({ isOpen: true, isOffline: false });
+      } else { 
+        throw new Error(result.message); 
+      }
+    } catch (err) {
+      console.error(err); setError(`Gagal mengirim data: ${err.message}`);
+      setIsUploading(false);
+    }
+  };
+
+  const progressCount = uploadMode === 'kategori' ? KATEGORI_WAJIB.filter(kat => photos.some(p => p.kategori === kat)).length : photos.length;
+  const progressPercent = uploadMode === 'kategori' ? Math.round((progressCount / KATEGORI_WAJIB.length) * 100) : (photos.length > 0 ? 100 : 0);
+  
+  // Filter khusus tab Laporan
+  const filteredLaporan = laporanRecords.filter(rec => 
+    rec.serialNumber?.toLowerCase().includes(searchLaporan.toLowerCase()) || 
+    rec.petugas?.toLowerCase().includes(searchLaporan.toLowerCase())
+  );
+
+  return (
+    <div className="max-w-4xl mx-auto pb-24 font-sans relative select-none">
+      
+      {isUploading && (
+        <div className="fixed inset-0 bg-white/95 z-[100] flex flex-col justify-center items-center backdrop-blur-sm transition-all">
+          <div className="relative w-20 h-20 mb-6">
+            <div className="absolute inset-0 rounded-full border-[3px] border-[#F1F3F4]"></div>
+            <div className="absolute inset-0 rounded-full border-[3px] border-[#1A73E8] border-t-transparent animate-spin"></div>
+            <div className="absolute inset-0 flex items-center justify-center text-2xl animate-bounce">🚀</div>
+          </div>
+          <h2 className="text-xl font-bold text-slate-800 tracking-wide">Menyimpan Data...</h2>
+          <p className="text-[#EA4335] text-xs font-bold mt-2 bg-red-50 px-3 py-1 rounded-full border border-red-100">Mohon tidak menutup halaman ini</p>
+        </div>
+      )}
+
+      {/* HEADER TABS */}
+      <div className="mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-200 pb-4">
+        <div className="border-l-4 border-[#1A73E8] pl-4">
+          <p className="text-[#1A73E8] text-xs font-extrabold uppercase tracking-widest mb-1">Penugasan Terkunci</p>
+          <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">{user.assignedUnit} <span className="font-medium text-slate-400">| {user.assignedTahap}</span></h1>
+        </div>
+
+        <div className="flex bg-[#F1F3F4] p-1 rounded-full border border-slate-200 w-full sm:w-auto">
+          <button onClick={() => setActiveTab('form')} className={`flex-1 sm:flex-none px-5 py-2 text-xs font-bold rounded-full transition-all ${activeTab === 'form' ? 'bg-white text-[#1A73E8] shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>📝 Form Input</button>
+          <button onClick={() => setActiveTab('laporan')} className={`flex-1 sm:flex-none px-5 py-2 text-xs font-bold rounded-full transition-all ${activeTab === 'laporan' ? 'bg-white text-[#1A73E8] shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>📋 Riwayat Data</button>
+        </div>
+      </div>
+
+      {/* ========================================================
+          TAMPILAN TAB 1: FORM PEMERIKSAAN
+          ======================================================== */}
+      {activeTab === 'form' && (
+        <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+          {error && (
+            <div className="mb-6 p-4 bg-[#FCE8E6] text-[#C5221F] rounded-2xl text-sm font-bold flex items-start gap-3 border border-[#FAD2CF] shadow-sm animate-in fade-in duration-200">
+              <span className="text-lg leading-none">⚠️</span> <span>{error}</span>
+            </div>
+          )}
+
+          {/* CARD 1: IDENTIFIKASI SN */}
+          <div className={`bg-white p-6 rounded-3xl border transition-all duration-300 mb-6 ${isSnLocked ? 'border-emerald-200 shadow-sm bg-emerald-50/10' : 'border-[#1A73E8]/60 shadow-[0_8px_30px_rgba(26,115,232,0.06)]'}`}>
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-black text-white ${isSnLocked ? 'bg-[#34A853]' : 'bg-[#1A73E8]'}`}>1</span>
+                Identifikasi Serial Number
+              </h2>
+              {isSnLocked && (
+                <button onClick={() => setIsSnLocked(false)} className="text-[#1A73E8] text-xs font-bold hover:underline bg-blue-50 px-3 py-1 rounded-full">Batal / Ganti SN</button>
+              )}
+            </div>
+
+            {!isSnLocked ? (
+              <form onSubmit={handleLockSN}>
+                <div className="relative flex items-center mb-4">
+                  <input 
+                    type="text" value={serialNumber} onChange={(e) => setSerialNumber(e.target.value.toUpperCase())}
+                    placeholder="Ketik / Scan Serial Number..."
+                    className="w-full pl-5 pr-14 py-3.5 bg-[#F8F9FA] border border-slate-200 rounded-2xl text-lg font-mono font-bold text-slate-800 outline-none focus:bg-white focus:border-[#1A73E8] focus:ring-1 focus:ring-[#1A73E8] transition-all uppercase placeholder:text-slate-300 placeholder:font-sans placeholder:font-normal"
+                    autoFocus disabled={isCheckingSN}
+                  />
+                  <button type="button" onClick={handleSimulasiScanQR} disabled={isCheckingSN} className="absolute right-2 w-11 h-11 flex items-center justify-center text-slate-400 hover:text-[#1A73E8] hover:bg-blue-50 rounded-xl transition-colors" title="Simulasi Scan">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm14 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" /></svg>
+                  </button>
+                </div>
+                <button type="submit" disabled={isCheckingSN} className="px-6 py-2.5 bg-[#1A73E8] hover:bg-[#1557B0] disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-bold text-xs rounded-full transition-colors shadow-sm flex items-center gap-2">
+                  {isCheckingSN ? <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span> : 'Kunci & Verifikasi SN'}
+                </button>
+              </form>
+            ) : (
+              <div className="flex items-center gap-3 bg-[#F8F9FA] p-4 rounded-xl border border-slate-100">
+                <div className="w-9 h-9 bg-[#E6F4EA] text-[#34A853] rounded-full flex items-center justify-center text-sm font-bold shadow-sm">✓</div>
+                <div><p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Terverifikasi Unik & Terkunci</p><p className="text-xl font-mono font-black text-slate-800 tracking-wide">{serialNumber}</p></div>
+              </div>
+            )}
+          </div>
+
+          {/* CARD 2: UPLOAD FOTO */}
+          <div className={`transition-all duration-500 transform ${isSnLocked ? 'opacity-100 translate-y-0 pointer-events-auto' : 'opacity-40 translate-y-2 pointer-events-none'}`}>
+            <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-[0_4px_24px_rgba(0,0,0,0.02)] mb-6">
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2"><span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-black text-white ${progressPercent === 100 ? 'bg-[#34A853]' : 'bg-slate-400'}`}>2</span> Foto Kelengkapan</h2>
+                <span className="text-xs font-bold text-slate-500 bg-[#F1F3F4] px-3 py-1 rounded-full font-mono">{progressCount} Item</span>
+              </div>
+
+              <div className="flex p-1 bg-[#F1F3F4] rounded-full mb-6 w-full sm:w-fit mx-auto border border-slate-200/50">
+                <button onClick={() => { setUploadMode('kategori'); setPhotos([]); }} className={`flex-1 sm:px-8 py-2 text-xs font-bold rounded-full transition-all whitespace-nowrap ${uploadMode === 'kategori' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>📊 Form 12 Kategori</button>
+                <button onClick={() => { setUploadMode('bulk'); setPhotos([]); }} className={`flex-1 sm:px-8 py-2 text-xs font-bold rounded-full transition-all whitespace-nowrap ${uploadMode === 'bulk' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>📂 Mode Cepat</button>
+              </div>
+
+              <div className="w-full h-1.5 bg-[#F1F3F4] rounded-full mb-8 overflow-hidden"><div className="h-full bg-[#1A73E8] rounded-full transition-all duration-500" style={{ width: `${progressPercent}%` }}></div></div>
+
+              {uploadMode === 'kategori' ? (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                  {KATEGORI_WAJIB.map((kat) => {
+                    const photo = photos.find(p => p.kategori === kat);
+                    return (
+                      <label key={kat} className={`relative flex flex-col items-center justify-center p-3 border ${photo ? 'border-[#34A853] bg-[#E6F4EA]/20' : 'border-slate-200 bg-white hover:bg-[#F8F9FA]'} rounded-2xl cursor-pointer transition-all h-28 overflow-hidden group`}>
+                        <input type="file" accept="image/*" className="hidden" onChange={(e) => handleKategoriChange(kat, e)} />
+                        {photo ? (
+                          <>
+                            <img src={photo.preview} className="absolute inset-0 w-full h-full object-cover" alt={kat} />
+                            <div className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><span className="text-white text-[10px] font-bold bg-black/40 px-2 py-0.5 rounded-full">Ganti</span></div>
+                            <div className="absolute top-1 right-1 bg-[#34A853] text-white rounded-full w-5 h-5 flex items-center justify-center shadow-sm"><svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg></div>
+                          </>
+                        ) : (
+                          <><span className="text-[10px] font-bold text-slate-500 text-center leading-tight px-1">{kat}</span></>
+                        )}
+                      </label>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div>
+                  <label className="border border-dashed border-[#1A73E8]/40 bg-[#F8F9FA] rounded-2xl p-8 text-center flex flex-col items-center justify-center hover:bg-blue-50/20 transition-colors cursor-pointer group mb-6">
+                    <input type="file" accept="image/*" multiple className="hidden" onChange={handleBulkChange} />
+                    <div className="w-12 h-12 bg-white text-[#1A73E8] rounded-2xl flex items-center justify-center shadow-sm border border-slate-100 group-hover:scale-105 transition-transform mb-3">➕</div>
+                    <h3 className="font-bold text-slate-700 text-sm">Pilih Dokumen Galeri</h3>
+                  </label>
+                  {photos.length > 0 && (
+                    <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3 animate-in fade-in duration-200">
+                      {photos.map(p => (
+                        <div key={p.id} className="relative aspect-square rounded-xl overflow-hidden border border-slate-200 shadow-sm group">
+                          <img src={p.preview} className="w-full h-full object-cover" alt="Preview" />
+                          <button onClick={() => removePhoto(p.id)} className="absolute top-1 right-1 bg-white/90 hover:bg-[#EA4335] text-[#EA4335] w-6 h-6 rounded-full flex items-center justify-center text-xs shadow-sm">✕</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-3 justify-end px-1">
+              <button onClick={handleBatal} className="px-5 py-2.5 rounded-full font-bold text-xs text-slate-500 bg-slate-100 hover:bg-slate-200 transition-colors">Reset Form</button>
+              <button onClick={handleSimpanData} disabled={isUploading || progressPercent !== 100} className="px-6 py-2.5 bg-[#1A73E8] hover:bg-[#1557B0] disabled:bg-slate-100 disabled:text-slate-400 text-white font-bold text-xs rounded-full transition-all flex items-center gap-1.5 shadow-sm">
+                <span>Kirim Berkas Pemeriksaan</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================
+          TAMPILAN TAB 2: LAPORAN DATA (READ-ONLY)
+          ======================================================== */}
+      {activeTab === 'laporan' && (
+        <div className="bg-white rounded-3xl shadow-[0_4px_24px_rgba(0,0,0,0.04)] border border-slate-50 overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-300">
+          <div className="p-5 sm:p-6 bg-slate-50 border-b border-slate-100 flex flex-col sm:flex-row justify-between gap-4">
+            <h2 className="font-bold text-slate-800 text-lg flex items-center gap-2">📋 Riwayat Data</h2>
+            <input type="text" placeholder="Cari Serial Number / Petugas..." value={searchLaporan} onChange={(e) => setSearchLaporan(e.target.value)} className="px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-medium outline-none focus:border-[#4285F4] focus:ring-2 focus:ring-blue-50 w-full sm:w-64" />
+          </div>
+          
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm text-slate-600">
+              <thead className="bg-[#F8F9FA] border-b border-slate-100">
+                <tr className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider">
+                  <th className="py-4 px-6">Waktu Input</th><th className="py-4 px-6">Serial Number</th><th className="py-4 px-6">Unit / Tahap</th><th className="py-4 px-6">Petugas</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {isLaporanLoading ? (
+                  <tr><td colSpan="4" className="py-12 text-center text-[#1A73E8] font-medium animate-pulse">Memuat riwayat pemeriksaan...</td></tr>
+                ) : filteredLaporan.length === 0 ? (
+                  <tr><td colSpan="4" className="py-12 text-center text-slate-400">Tidak ada data ditemukan.</td></tr>
+                ) : (
+                  filteredLaporan.map((rec) => (
+                    <tr key={rec.id} className="hover:bg-slate-50/50 transition-colors">
+                      <td className="py-4 px-6 text-xs font-mono text-slate-500">{new Date(rec.timestamp).toLocaleString('id-ID', {day: '2-digit', month: 'short', hour: '2-digit', minute:'2-digit'})}</td>
+                      <td className="py-4 px-6 font-mono font-black text-[#1A73E8]">{rec.serialNumber}</td>
+                      <td className="py-4 px-6 font-bold text-slate-700">{rec.unit} <span className="font-medium text-slate-400 text-xs block mt-0.5">{rec.tahap}</span></td>
+                      <td className="py-4 px-6 text-xs font-bold uppercase">{rec.petugas}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL NOTIFIKASI BERHASIL */}
+      {notifKerjaan.isOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 z-[100] flex justify-center items-center p-4 backdrop-blur-sm animate-in fade-in duration-300">
+          <div className="bg-white rounded-3xl w-full max-w-sm shadow-2xl overflow-hidden flex flex-col transform transition-all animate-in zoom-in-95 duration-300">
+            <div className={`p-6 flex flex-col items-center text-center ${notifKerjaan.isOffline ? 'bg-amber-50' : 'bg-green-50'}`}>
+              <div className={`w-20 h-20 rounded-full flex items-center justify-center text-4xl mb-4 shadow-inner ${notifKerjaan.isOffline ? 'bg-amber-100' : 'bg-green-100'}`}>
+                {notifKerjaan.isOffline ? '📡' : '🎉'}
+              </div>
+              <h3 className={`text-xl font-extrabold tracking-tight mb-2 ${notifKerjaan.isOffline ? 'text-amber-800' : 'text-green-800'}`}>
+                {notifKerjaan.isOffline ? 'Tersimpan Offline!' : 'Berhasil Terkirim!'}
+              </h3>
+              <p className="text-sm font-medium text-slate-600 leading-relaxed px-2">
+                {notifKerjaan.isOffline ? 'Data & foto disimpan aman di memori HP. Sistem akan mengunggahnya otomatis saat internet tersedia.' : 'Pekerjaan ini sudah diunggah ke server dan folder Drive dengan aman.'}
+              </p>
+            </div>
+            <div className="p-5 bg-white border-t border-slate-100">
+              <button onClick={() => setNotifKerjaan({ isOpen: false, isOffline: false })} className={`w-full py-3.5 rounded-xl text-sm font-bold text-white transition-all shadow-md ${notifKerjaan.isOffline ? 'bg-amber-500 hover:bg-amber-600' : 'bg-green-600 hover:bg-green-700'}`}>Oke, Lanjut Bekerja</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
