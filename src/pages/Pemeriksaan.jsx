@@ -57,45 +57,56 @@ export default function Pemeriksaan() {
   const [searchLaporan, setSearchLaporan] = useState('');
 
   // ========================================================
-  // STATE SCANNER: KOTAK DINAMIS + MULTI-LENSA KAMERA
+  // STATE SCANNER ANTI-CRASH (DEBOUNCED RESIZING)
   // ========================================================
   const [isScanning, setIsScanning] = useState(false);
   const [isTorchOn, setIsTorchOn] = useState(false);
   
+  // State visual (diubah instan & mulus oleh user di UI)
   const [boxWidth, setBoxWidth] = useState(340);
   const [boxHeight, setBoxHeight] = useState(140);
   
-  // State untuk deteksi lensa HP
+  // State hardware (menunggu tenang baru sensor kamera merespon)
+  const [cameraBox, setCameraBox] = useState({ width: 340, height: 140 });
+  
   const [cameras, setCameras] = useState([]);
-  const [activeCameraIndex, setActiveCameraIndex] = useState(-1); // -1 = Lensa Default (Environment)
+  const [activeCameraIndex, setActiveCameraIndex] = useState(-1); 
   
   const scannerRef = useRef(null);
 
-  // Ambil daftar lensa setelah Modal Kamera terbuka (agar izin kamera sudah di-ACC user)
+  // Efek peredam kejut (Debounce): Mengubah ukuran box sensor 600ms setelah klik terakhir
+  useEffect(() => {
+    if (!isScanning) return;
+    const timer = setTimeout(() => {
+      setCameraBox({ width: boxWidth, height: boxHeight });
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [boxWidth, boxHeight, isScanning]);
+
+  // Ambil daftar lensa otomatis
   useEffect(() => {
     if (isScanning && cameras.length === 0) {
       Html5Qrcode.getCameras().then(devices => {
-        if (devices && devices.length > 0) {
-          setCameras(devices);
-        }
-      }).catch(err => console.log("Gagal mendeteksi daftar lensa:", err));
+        if (devices && devices.length > 0) setCameras(devices);
+      }).catch(err => console.log("Gagal deteksi lensa:", err));
     }
   }, [isScanning, cameras.length]);
 
+  // Siklus Hidup Mesin Scanner Utama
   useEffect(() => {
     if (isScanning) {
       setTimeout(() => {
         const html5QrCode = new Html5Qrcode("reader");
         scannerRef.current = html5QrCode;
         
-        // Pilih antara lensa default (belakang) ATAU lensa spesifik yang dipilih user
+        // Perbaikan: Kirim string ID langsung ke mesin jika memilih lensa spesifik
         const cameraConfig = activeCameraIndex === -1 || cameras.length === 0
           ? { facingMode: "environment" }
-          : { deviceId: { exact: cameras[activeCameraIndex].id } };
+          : cameras[activeCameraIndex].id;
 
         const startConfig = { 
-          fps: 15,
-          qrbox: { width: boxWidth, height: boxHeight },
+          fps: 10, // Diturunkan ke 10 agar fokus lensa mendeteksi garis 1D Hisense lebih tajam
+          qrbox: { width: cameraBox.width, height: cameraBox.height },
           disableFlip: false
         };
 
@@ -109,19 +120,18 @@ export default function Pemeriksaan() {
           cameraConfig, 
           startConfig,
           handleSuccess,
-          () => {} // Abaikan log frame
+          () => {}
         ).then(() => {
           if (scannerRef.current) {
             const track = scannerRef.current.getRunningTrack();
             if (track) {
               track.applyConstraints({ advanced: [{ focusMode: "continuous" }] })
-                .catch(() => console.log("Auto-focus berjalan mode standar"));
+                .catch(() => console.log("Fokus otomatis berjalan"));
             }
           }
         }).catch(err => {
           console.error("Gagal membuka kamera:", err);
-          setError("Kamera gagal diakses. Pastikan browser memiliki izin.");
-          setIsScanning(false);
+          setError("Gagal mengakses lensa pilihan. Silakan coba lensa lainnya.");
         });
       }, 200);
     }
@@ -132,25 +142,23 @@ export default function Pemeriksaan() {
         scannerRef.current = null;
       }
     };
-  }, [isScanning, boxWidth, boxHeight, activeCameraIndex, cameras]); 
+  }, [isScanning, cameraBox, activeCameraIndex, cameras]); // Bergantung pada cameraBox yang sudah diredam
 
-  // FUNGSI GANTI LENSA AMAN (ANTI-CRASH)
-  const handleSwitchLens = () => {
+  const handleFocusSwitchLens = () => {
     if (cameras.length < 2) {
-      alert("Hanya ada 1 lensa kamera yang terdeteksi di HP ini.");
+      alert("Hanya ada 1 lensa kamera terdeteksi di perangkat ini.");
       return;
     }
-    // Matikan scanner sejenak agar hardware tidak bentrok
     setIsScanning(false);
     setTimeout(() => {
       let nextIndex = activeCameraIndex + 1;
-      if (nextIndex >= cameras.length) nextIndex = 0; // Loop kembali ke awal
+      if (nextIndex >= cameras.length) nextIndex = 0;
       setActiveCameraIndex(nextIndex);
-      setIsScanning(true); // Nyalakan ulang dengan lensa baru
-    }, 400); // Jeda 400ms agar lensa lama benar-benar mati dulu
+      setIsScanning(true);
+    }, 300);
   };
 
-  // FUNGSI SENTER
+  // LOGIKA SENTER AMAN (PLEK-KETIPLEK DARI KODE SUKSESMU)
   const toggleTorch = async () => {
     try {
       if (!scannerRef.current) return;
@@ -250,16 +258,6 @@ export default function Pemeriksaan() {
   const progressPercent = uploadMode === 'kategori' ? Math.round((progressCount / KATEGORI_WAJIB.length) * 100) : (photos.length > 0 ? 100 : 0);
   const filteredLaporan = laporanRecords.filter(rec => rec.serialNumber?.toLowerCase().includes(searchLaporan.toLowerCase()) || rec.petugas?.toLowerCase().includes(searchLaporan.toLowerCase()));
 
-  if (!user?.assignedUnit || !user?.assignedTahap) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] font-sans">
-        <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mb-4"><span className="text-4xl">🚷</span></div>
-        <h2 className="text-xl font-bold text-slate-800">Anda Belum Mendapat Tugas</h2>
-        <p className="text-slate-500 mt-2 text-center max-w-sm">Hubungi Admin/Supervisor untuk mengatur Unit dan Tahap Anda.</p>
-      </div>
-    );
-  }
-
   return (
     <div className="max-w-4xl mx-auto pb-24 font-sans relative select-none">
       
@@ -278,6 +276,7 @@ export default function Pemeriksaan() {
             <div className="relative bg-black w-full h-[360px] flex items-center justify-center overflow-hidden shrink-0">
               <div id="reader" className="w-full h-full object-cover"></div>
               
+              {/* TARGET BOX OVERLAY (Ukurannya merespon boxWidth & boxHeight visual instan) */}
               <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                 <div style={{ width: `${boxWidth}px`, height: `${boxHeight}px` }} className="border-2 border-[#34A853] relative shadow-[0_0_0_9999px_rgba(0,0,0,0.65)] transition-all duration-150">
                   <div className="absolute top-0 left-0 w-4 h-4 border-t-4 border-l-4 border-[#34A853] -mt-1 -ml-1"></div>
@@ -293,7 +292,7 @@ export default function Pemeriksaan() {
               <div className="flex justify-between items-center text-xs font-bold text-slate-600">
                 <span>Sesuaikan Lensa & Kotak:</span>
                 <div className="flex items-center gap-2">
-                  <button type="button" onClick={handleSwitchLens} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-bold transition-all bg-white hover:bg-slate-100 text-slate-700 border-slate-300 shadow-sm" title="Ganti Lensa Kamera">
+                  <button type="button" onClick={handleFocusSwitchLens} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-bold transition-all bg-white hover:bg-slate-100 text-slate-700 border-slate-300 shadow-sm" title="Ganti Lensa Kamera">
                     🔄 Lensa
                   </button>
                   <button type="button" onClick={toggleTorch} className={`flex items-center justify-center w-8 h-8 rounded-full border text-sm font-bold transition-all ${isTorchOn ? 'bg-amber-400 text-amber-900 border-amber-300 shadow-sm' : 'bg-slate-800 text-white border-transparent'}`}>
@@ -403,7 +402,7 @@ export default function Pemeriksaan() {
                     autoFocus disabled={isCheckingSN}
                   />
                   <button type="button" onClick={() => setIsScanning(true)} disabled={isCheckingSN} className="absolute right-2 w-11 h-11 flex items-center justify-center text-slate-400 hover:text-white bg-white hover:bg-[#1A73E8] border border-slate-200 hover:border-transparent rounded-xl transition-all shadow-sm group" title="Buka Kamera Scanner">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 transform group-hover:scale-110 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9zM15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 transform group-hover:scale-110 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812-1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9zM15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
                   </button>
                 </div>
                 <button type="submit" disabled={isCheckingSN} className="px-6 py-2.5 bg-[#1A73E8] hover:bg-[#1557B0] disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-bold text-xs rounded-full transition-colors shadow-sm flex items-center gap-2">
