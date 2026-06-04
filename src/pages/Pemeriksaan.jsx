@@ -14,7 +14,6 @@ const KATEGORI_WAJIB = [
   "Jaringan Internet", "Bluetooth", "Konektivitas Display", "Lainnya"
 ];
 
-// PERBAIKAN: Kurung tutup di sini sudah diperbaiki 100%
 const compressImage = (file) => {
   return new Promise((resolve) => {
     const reader = new FileReader();
@@ -48,7 +47,6 @@ export default function Pemeriksaan() {
   
   const [uploadMode, setUploadMode] = useState('kategori'); 
   const [photos, setPhotos] = useState([]); 
-  
   const [mediaSheet, setMediaSheet] = useState({ isOpen: false, kategori: null });
   
   const [isUploading, setIsUploading] = useState(false);
@@ -59,7 +57,7 @@ export default function Pemeriksaan() {
   const [searchLaporan, setSearchLaporan] = useState('');
 
   // ========================================================
-  // STATE SCANNER DENGAN UKURAN DINAMIS & KOTAK DIATUR USER
+  // STATE SCANNER: KOTAK DINAMIS + MULTI-LENSA KAMERA
   // ========================================================
   const [isScanning, setIsScanning] = useState(false);
   const [isTorchOn, setIsTorchOn] = useState(false);
@@ -67,7 +65,22 @@ export default function Pemeriksaan() {
   const [boxWidth, setBoxWidth] = useState(340);
   const [boxHeight, setBoxHeight] = useState(140);
   
+  // State untuk deteksi lensa HP
+  const [cameras, setCameras] = useState([]);
+  const [activeCameraIndex, setActiveCameraIndex] = useState(-1); // -1 = Lensa Default (Environment)
+  
   const scannerRef = useRef(null);
+
+  // Ambil daftar lensa setelah Modal Kamera terbuka (agar izin kamera sudah di-ACC user)
+  useEffect(() => {
+    if (isScanning && cameras.length === 0) {
+      Html5Qrcode.getCameras().then(devices => {
+        if (devices && devices.length > 0) {
+          setCameras(devices);
+        }
+      }).catch(err => console.log("Gagal mendeteksi daftar lensa:", err));
+    }
+  }, [isScanning, cameras.length]);
 
   useEffect(() => {
     if (isScanning) {
@@ -75,16 +88,15 @@ export default function Pemeriksaan() {
         const html5QrCode = new Html5Qrcode("reader");
         scannerRef.current = html5QrCode;
         
-        // Konfigurasi performa tinggi menggunakan nilai 'ideal' (tidak merusak sistem)
+        // Pilih antara lensa default (belakang) ATAU lensa spesifik yang dipilih user
+        const cameraConfig = activeCameraIndex === -1 || cameras.length === 0
+          ? { facingMode: "environment" }
+          : { deviceId: { exact: cameras[activeCameraIndex].id } };
+
         const startConfig = { 
           fps: 15,
           qrbox: { width: boxWidth, height: boxHeight },
-          disableFlip: false,
-          videoConstraints: {
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
-            facingMode: "environment"
-          }
+          disableFlip: false
         };
 
         const handleSuccess = (decodedText) => {
@@ -93,37 +105,23 @@ export default function Pemeriksaan() {
           html5QrCode.stop().catch(console.error); 
         };
 
-        const handleFailure = (errorMessage) => { /* Abaikan log error loop */ };
-
-        // Eksekusi Pintu Pertama (Mode Tajam HD + Auto-focus)
         html5QrCode.start(
-          { facingMode: "environment" }, 
+          cameraConfig, 
           startConfig,
           handleSuccess,
-          handleFailure
+          () => {} // Abaikan log frame
         ).then(() => {
           if (scannerRef.current) {
             const track = scannerRef.current.getRunningTrack();
             if (track) {
-              track.applyConstraints({
-                advanced: [{ focusMode: "continuous" }]
-              }).catch(() => console.log("Sistem fokus otomatis aktif pada mode standar"));
+              track.applyConstraints({ advanced: [{ focusMode: "continuous" }] })
+                .catch(() => console.log("Auto-focus berjalan mode standar"));
             }
           }
         }).catch(err => {
-          console.error("Gagal mode HD, meluncurkan sistem penyelamat otomatis...", err);
-          
-          // PINTU KEDUA (FALLBACK ANTI-GAGAL): Buka dengan pengaturan standar bawaan HP
-          html5QrCode.start(
-            { facingMode: "environment" },
-            { fps: 15, qrbox: { width: boxWidth, height: boxHeight } },
-            handleSuccess,
-            handleFailure
-          ).catch(err2 => {
-            console.error(err2);
-            setError("Kamera gagal diakses. Pastikan browser memiliki izin kamera.");
-            setIsScanning(false);
-          });
+          console.error("Gagal membuka kamera:", err);
+          setError("Kamera gagal diakses. Pastikan browser memiliki izin.");
+          setIsScanning(false);
         });
       }, 200);
     }
@@ -134,33 +132,35 @@ export default function Pemeriksaan() {
         scannerRef.current = null;
       }
     };
-  }, [isScanning, boxWidth, boxHeight]); 
+  }, [isScanning, boxWidth, boxHeight, activeCameraIndex, cameras]); 
 
-  // ========================================================
-  // SENTER ADAPTASI JALUR LANGSUNG (DIJAMIN MENYALA)
-  // ========================================================
+  // FUNGSI GANTI LENSA AMAN (ANTI-CRASH)
+  const handleSwitchLens = () => {
+    if (cameras.length < 2) {
+      alert("Hanya ada 1 lensa kamera yang terdeteksi di HP ini.");
+      return;
+    }
+    // Matikan scanner sejenak agar hardware tidak bentrok
+    setIsScanning(false);
+    setTimeout(() => {
+      let nextIndex = activeCameraIndex + 1;
+      if (nextIndex >= cameras.length) nextIndex = 0; // Loop kembali ke awal
+      setActiveCameraIndex(nextIndex);
+      setIsScanning(true); // Nyalakan ulang dengan lensa baru
+    }, 400); // Jeda 400ms agar lensa lama benar-benar mati dulu
+  };
+
+  // FUNGSI SENTER
   const toggleTorch = async () => {
     try {
-      if (!scannerRef.current) {
-        alert("Kamera belum siap, tunggu sebentar.");
-        return;
-      }
-
-      // Ambil track video aktif langsung dari mesin pembaca kamera
+      if (!scannerRef.current) return;
       const track = scannerRef.current.getRunningTrack();
-      if (!track) {
-        alert("Gagal menemukan jalur lensa kamera.");
-        return;
-      }
-
+      if (!track) return;
       const nextState = !isTorchOn;
-      await track.applyConstraints({
-        advanced: [{ torch: nextState }]
-      });
+      await track.applyConstraints({ advanced: [{ torch: nextState }] });
       setIsTorchOn(nextState);
-
     } catch (err) {
-      alert("Senter gagal merespon. Fitur senter web ini memerlukan Google Chrome pada perangkat Android.");
+      alert("Senter gagal merespon. Browser/HP memblokir akses senter via web.");
     }
   };
   // ========================================================
@@ -250,6 +250,16 @@ export default function Pemeriksaan() {
   const progressPercent = uploadMode === 'kategori' ? Math.round((progressCount / KATEGORI_WAJIB.length) * 100) : (photos.length > 0 ? 100 : 0);
   const filteredLaporan = laporanRecords.filter(rec => rec.serialNumber?.toLowerCase().includes(searchLaporan.toLowerCase()) || rec.petugas?.toLowerCase().includes(searchLaporan.toLowerCase()));
 
+  if (!user?.assignedUnit || !user?.assignedTahap) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] font-sans">
+        <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mb-4"><span className="text-4xl">🚷</span></div>
+        <h2 className="text-xl font-bold text-slate-800">Anda Belum Mendapat Tugas</h2>
+        <p className="text-slate-500 mt-2 text-center max-w-sm">Hubungi Admin/Supervisor untuk mengatur Unit dan Tahap Anda.</p>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-4xl mx-auto pb-24 font-sans relative select-none">
       
@@ -281,10 +291,15 @@ export default function Pemeriksaan() {
 
             <div className="p-4 bg-slate-50 border-t border-slate-100 flex flex-col gap-3 shrink-0">
               <div className="flex justify-between items-center text-xs font-bold text-slate-600">
-                <span>Sesuaikan Kotak Bidik Di Lapangan:</span>
-                <button type="button" onClick={toggleTorch} className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border text-xs font-bold transition-all ${isTorchOn ? 'bg-amber-400 text-amber-900 border-amber-300 shadow-sm' : 'bg-slate-800 text-white border-transparent'}`}>
-                  {isTorchOn ? '💡 Senter Menyala' : '🔦 Saklar Senter'}
-                </button>
+                <span>Sesuaikan Lensa & Kotak:</span>
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={handleSwitchLens} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-bold transition-all bg-white hover:bg-slate-100 text-slate-700 border-slate-300 shadow-sm" title="Ganti Lensa Kamera">
+                    🔄 Lensa
+                  </button>
+                  <button type="button" onClick={toggleTorch} className={`flex items-center justify-center w-8 h-8 rounded-full border text-sm font-bold transition-all ${isTorchOn ? 'bg-amber-400 text-amber-900 border-amber-300 shadow-sm' : 'bg-slate-800 text-white border-transparent'}`}>
+                    {isTorchOn ? '💡' : '🔦'}
+                  </button>
+                </div>
               </div>
               
               <div className="grid grid-cols-2 gap-3">
