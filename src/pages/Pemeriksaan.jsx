@@ -56,7 +56,7 @@ export default function Pemeriksaan() {
   const [searchLaporan, setSearchLaporan] = useState('');
 
   // ========================================================
-  // STATE & LOGIKA: KAMERA SCANNER (DIPERBAIKI)
+  // KAMERA DENGAN "KACAMATA KUDA" (PRESISI TINGGI)
   // ========================================================
   const [isScanning, setIsScanning] = useState(false);
   const [isTorchOn, setIsTorchOn] = useState(false);
@@ -64,7 +64,7 @@ export default function Pemeriksaan() {
 
   useEffect(() => {
     if (isScanning) {
-      setIsTorchOn(false); // Reset status senter saat kamera baru dibuka
+      setIsTorchOn(false);
       
       setTimeout(() => {
         const html5QrCode = new Html5Qrcode("reader");
@@ -73,16 +73,17 @@ export default function Pemeriksaan() {
         html5QrCode.start(
           { facingMode: "environment" }, 
           { 
-            fps: 15, // Ditingkatkan agar lebih sensitif
-            // qrbox dihapus di sini agar scanner melacak ke SELURUH layar, tingkat akurasi naik 100%
+            fps: 15,
+            // qrbox AKTIF KEMBALI: Dibuat pipih (Lebar 260px, Tinggi 80px)
+            // Scanner HANYA akan membaca barcode yang masuk area ini!
+            qrbox: { width: 260, height: 80 } 
           },
           (decodedText) => {
-            // JIKA BERHASIL TERBACA:
             setSerialNumber(decodedText.toUpperCase()); 
             setIsScanning(false); 
             html5QrCode.stop().catch(console.error); 
           },
-          (errorMessage) => { /* Abaikan error looping per frame */ }
+          (errorMessage) => { /* Abaikan error loop */ }
         ).catch(err => {
           console.error(err);
           setError("Kamera gagal diakses. Pastikan browser memiliki izin kamera.");
@@ -99,17 +100,15 @@ export default function Pemeriksaan() {
     };
   }, [isScanning]);
 
-  // FUNGSI MENGHIDUPKAN/MEMATIKAN SENTER
   const toggleTorch = () => {
     if (scannerRef.current) {
       const newState = !isTorchOn;
       scannerRef.current.applyVideoConstraints({
         advanced: [{ torch: newState }]
-      }).then(() => {
-        setIsTorchOn(newState);
-      }).catch(err => {
+      }).then(() => { setIsTorchOn(newState); })
+        .catch(err => {
         console.error(err);
-        alert("Maaf, sepertinya HP atau Browser Anda tidak mengizinkan akses ke Senter.");
+        alert("Maaf, sepertinya HP Anda tidak mendukung pengontrolan Senter via Web.");
       });
     }
   };
@@ -125,7 +124,7 @@ export default function Pemeriksaan() {
       const qRec = query(collection(db, 'pemeriksaan_records'), orderBy('timestamp', 'desc'));
       const snap = await getDocs(qRec);
       setLaporanRecords(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    } catch (err) { console.error("Gagal mengambil data laporan:", err); } 
+    } catch (err) { console.error("Gagal mengambil laporan:", err); } 
     finally { setIsLaporanLoading(false); }
   };
 
@@ -134,7 +133,7 @@ export default function Pemeriksaan() {
       <div className="flex flex-col items-center justify-center min-h-[60vh] font-sans">
         <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mb-4"><span className="text-4xl">🚷</span></div>
         <h2 className="text-xl font-bold text-slate-800">Anda Belum Mendapat Tugas</h2>
-        <p className="text-slate-500 mt-2 text-center max-w-sm">Silakan hubungi Admin atau Supervisor untuk mengatur Unit dan Tahap pemeriksaan Anda hari ini.</p>
+        <p className="text-slate-500 mt-2 text-center max-w-sm">Hubungi Admin/Supervisor untuk mengatur Unit dan Tahap Anda.</p>
       </div>
     );
   }
@@ -143,14 +142,14 @@ export default function Pemeriksaan() {
     e?.preventDefault();
     const finalSN = serialNumber.trim().toUpperCase();
 
-    if (!finalSN) { setError("Silakan isi atau scan Serial Number terlebih dahulu."); return; }
+    if (!finalSN) { setError("Silakan isi/scan Serial Number terlebih dahulu."); return; }
     setIsCheckingSN(true); setError('');
 
     try {
       const cekLokal = await dbLocal.antrean_pemeriksaan.toArray();
       const isAdaDiLokal = cekLokal.some(item => item.serialNumber === finalSN);
       if (isAdaDiLokal) {
-        setError(`DITOLAK: SN [${finalSN}] sudah ada di antrean offline HP Anda! Menunggu sinyal untuk diunggah.`);
+        setError(`DITOLAK: SN [${finalSN}] sudah ada di antrean offline Anda!`);
         setIsCheckingSN(false); return;
       }
 
@@ -159,13 +158,13 @@ export default function Pemeriksaan() {
         const snapCekOnline = await getDocs(qCekOnline);
         if (!snapCekOnline.empty) {
           const ex = snapCekOnline.docs[0].data();
-          setError(`DITOLAK: Barang dengan SN [${finalSN}] sudah pernah diperiksa pada tahap ${ex.tahap} oleh petugas ${ex.petugas}. Tidak boleh periksa ganda!`);
+          setError(`DITOLAK: Barang [${finalSN}] sudah pernah diperiksa pada tahap ${ex.tahap} oleh ${ex.petugas}.`);
           setIsCheckingSN(false); return; 
         }
       }
       setIsSnLocked(true);
     } catch (err) {
-      console.error(err); setError("Terjadi gangguan saat memvalidasi SN. Periksa koneksi internet.");
+      console.error(err); setError("Terjadi gangguan saat memvalidasi SN. Periksa internet.");
     } finally { setIsCheckingSN(false); }
   };
 
@@ -182,17 +181,13 @@ export default function Pemeriksaan() {
   const handleBulkChange = (e) => {
     const files = Array.from(e.target.files);
     if (files.length === 0) return;
-    const newPhotos = files.map((file, i) => ({
-      id: `${Date.now()}_${i}`, file, preview: URL.createObjectURL(file), kategori: `Foto Pemeriksaan${i + 1}`
-    }));
+    const newPhotos = files.map((file, i) => ({ id: `${Date.now()}_${i}`, file, preview: URL.createObjectURL(file), kategori: `Foto Pemeriksaan${i + 1}` }));
     setPhotos(prev => [...prev, ...newPhotos]);
   };
 
   const removePhoto = (id) => { setPhotos(prev => prev.filter(p => p.id !== id)); };
 
-  const handleBatal = () => {
-    setSerialNumber(''); setIsSnLocked(false); setPhotos([]); setError('');
-  };
+  const handleBatal = () => { setSerialNumber(''); setIsSnLocked(false); setPhotos([]); setError(''); };
 
   const handleSimpanData = async () => {
     if (uploadMode === 'kategori') {
@@ -248,42 +243,36 @@ export default function Pemeriksaan() {
   return (
     <div className="max-w-4xl mx-auto pb-24 font-sans relative select-none">
       
-      {/* MODAL SCANNER KAMERA + SENTER */}
+      {/* MODAL SCANNER KAMERA + SENTER + TARGET BOX PRESISI */}
       {isScanning && (
         <div className="fixed inset-0 bg-slate-900/95 z-[120] flex flex-col justify-center items-center backdrop-blur-md animate-in fade-in duration-300">
           <div className="w-full max-w-md bg-white rounded-3xl overflow-hidden shadow-2xl m-4 flex flex-col animate-in zoom-in-95 duration-300">
             <div className="p-4 bg-slate-800 flex justify-between items-center text-white shrink-0">
               <div className="flex items-center gap-2">
                 <span className="text-xl">📷</span>
-                <h3 className="font-bold text-sm tracking-wide">Pindai Serial Number</h3>
+                <h3 className="font-bold text-sm tracking-wide">Bidik Serial Number</h3>
               </div>
               <button onClick={() => setIsScanning(false)} className="text-slate-300 hover:text-white bg-slate-700 hover:bg-red-500 rounded-full w-8 h-8 flex items-center justify-center transition-colors font-bold">✕</button>
             </div>
             
             <div className="relative bg-black w-full h-[450px] flex items-center justify-center overflow-hidden">
-              
               <div id="reader" className="w-full h-full object-cover"></div>
               
-              {/* Overlay Visual Penuntun (Tidak Memblokir Sensor) */}
+              {/* Overlay Visual Penuntun (Ukurannya DISAMAKAN dengan qrbox: 260x80) */}
               <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                <div className="w-[80%] h-[120px] border-2 border-[#34A853] rounded-xl relative shadow-[0_0_0_9999px_rgba(0,0,0,0.5)]">
-                  <div className="absolute top-0 left-0 w-4 h-4 border-t-4 border-l-4 border-[#34A853] rounded-tl-lg -mt-1 -ml-1"></div>
-                  <div className="absolute top-0 right-0 w-4 h-4 border-t-4 border-r-4 border-[#34A853] rounded-tr-lg -mt-1 -mr-1"></div>
-                  <div className="absolute bottom-0 left-0 w-4 h-4 border-b-4 border-l-4 border-[#34A853] rounded-bl-lg -mb-1 -ml-1"></div>
-                  <div className="absolute bottom-0 right-0 w-4 h-4 border-b-4 border-r-4 border-[#34A853] rounded-br-lg -mb-1 -mr-1"></div>
-                  <div className="absolute w-full h-0.5 bg-red-500/50 top-1/2 left-0 transform -translate-y-1/2 animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.8)]"></div>
+                <div className="w-[260px] h-[80px] border-2 border-[#34A853] relative shadow-[0_0_0_9999px_rgba(0,0,0,0.6)]">
+                  <div className="absolute top-0 left-0 w-4 h-4 border-t-4 border-l-4 border-[#34A853] -mt-1 -ml-1"></div>
+                  <div className="absolute top-0 right-0 w-4 h-4 border-t-4 border-r-4 border-[#34A853] -mt-1 -mr-1"></div>
+                  <div className="absolute bottom-0 left-0 w-4 h-4 border-b-4 border-l-4 border-[#34A853] -mb-1 -ml-1"></div>
+                  <div className="absolute bottom-0 right-0 w-4 h-4 border-b-4 border-r-4 border-[#34A853] -mb-1 -mr-1"></div>
+                  <div className="absolute w-full h-0.5 bg-red-500/80 top-1/2 left-0 transform -translate-y-1/2 animate-pulse shadow-[0_0_8px_rgba(239,68,68,1)]"></div>
                 </div>
-                <p className="text-white text-xs font-bold mt-6 bg-black/60 px-4 py-2 rounded-full tracking-wide text-center leading-relaxed">
-                  Paskan garis merah ke Barcode.<br/>Jauhkan layar 10-15cm agar fokus.
+                <p className="text-white text-xs font-bold mt-8 bg-black/70 px-4 py-2 rounded-full tracking-wide text-center leading-relaxed backdrop-blur-sm border border-white/10">
+                  Masukkan HANYA SATU Barcode ke dalam kotak.<br/>Jauhkan layar 10-15cm.
                 </p>
               </div>
 
-              {/* TOMBOL SENTER (Di atas overlay agar bisa diklik) */}
-              <button 
-                onClick={toggleTorch}
-                className={`absolute bottom-6 flex items-center justify-center gap-2 px-5 py-2.5 rounded-full font-bold text-sm transition-all shadow-lg border ${isTorchOn ? 'bg-amber-400 text-amber-900 border-amber-300' : 'bg-slate-800/80 text-white border-white/20 hover:bg-[#1A73E8]'}`}
-                title="Senter Kamera"
-              >
+              <button onClick={toggleTorch} className={`absolute bottom-6 flex items-center justify-center gap-2 px-5 py-2.5 rounded-full font-bold text-sm transition-all shadow-lg border ${isTorchOn ? 'bg-amber-400 text-amber-900 border-amber-300' : 'bg-slate-800/80 text-white border-white/20 hover:bg-[#1A73E8]'}`} title="Senter Kamera">
                 {isTorchOn ? '💡 Matikan Senter' : '🔦 Nyalakan Senter'}
               </button>
             </div>
