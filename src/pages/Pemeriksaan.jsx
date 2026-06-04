@@ -5,7 +5,7 @@ import { collection, addDoc, runTransaction, doc, query, where, getDocs, orderBy
 import { dbLocal } from '../db/offlineDB';
 import { fetchWithRetry } from '../utils/network';
 
-// IMPORT ZXING
+// IMPORT ZXING SEBAGAI CADANGAN
 import { BrowserMultiFormatReader } from '@zxing/browser';
 
 const DRIVE_API_URL = "https://script.google.com/macros/s/AKfycbyJwmBp6pfgIgO9jSOl-RbQ6RMBTQPUX0zJFd_3TYqQ-egca9WNOImoKrLYW6PkQUDBYQ/exec";
@@ -60,12 +60,12 @@ export default function Pemeriksaan() {
   const [searchLaporan, setSearchLaporan] = useState('');
 
   // ========================================================
-  // STATE SCANNER ZXING (ANTI CRASH)
+  // STATE SCANNER HYBRID (NATIVE API + ZXING)
   // ========================================================
   const [isScanning, setIsScanning] = useState(false);
   const [isTorchOn, setIsTorchOn] = useState(false);
-  const [boxWidth, setBoxWidth] = useState(350);
-  const [boxHeight, setBoxHeight] = useState(180);
+  const [boxWidth, setBoxWidth] = useState(340);
+  const [boxHeight, setBoxHeight] = useState(140);
   
   const videoRef = useRef(null);
   const scannerTrackRef = useRef(null);
@@ -75,19 +75,19 @@ export default function Pemeriksaan() {
 
     const codeReader = new BrowserMultiFormatReader();
     let localStream = null;
-    let isScanned = false; // Flag pengaman agar tidak double-scan
-    let timeoutId = null;
+    let isScanned = false; 
+    let scanTimeout = null;
 
     setIsTorchOn(false);
 
     const startScanner = async () => {
       try {
-        // 1. Ambil stream kamera dengan resolusi tinggi (1080p)
+        // 1. Ambil stream kamera dengan resolusi 720p (Lebih ringan & cepat diproses JS)
         localStream = await navigator.mediaDevices.getUserMedia({
           video: {
             facingMode: "environment",
-            width: { ideal: 1920 },
-            height: { ideal: 1080 }
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
           }
         });
 
@@ -96,10 +96,10 @@ export default function Pemeriksaan() {
         videoRef.current.setAttribute("playsinline", true);
         await videoRef.current.play();
 
-        // Ambil track untuk Senter dan Autofocus
         const track = localStream.getVideoTracks()[0];
         scannerTrackRef.current = track;
 
+        // Autofocus & Zoom Sedikit biar barcode makin jelas
         setTimeout(async () => {
           try {
             const capabilities = track.getCapabilities?.() || {};
@@ -108,46 +108,62 @@ export default function Pemeriksaan() {
               advanced.push({ focusMode: "continuous" });
             }
             if (capabilities.zoom) {
-              advanced.push({ zoom: Math.min(2, capabilities.zoom.max || 1) });
+              advanced.push({ zoom: Math.min(1.5, capabilities.zoom.max || 1) });
             }
             if (advanced.length > 0) {
               await track.applyConstraints({ advanced });
             }
           } catch (e) {
-            console.log("Autofocus manual tidak didukung:", e);
+            console.log("Autofocus manual tidak didukung");
           }
         }, 1000);
 
-        // 2. Scan Loop Manual: 6 FPS (Setiap 150ms). Ini mencegah HP Hang / Layar Putih.
+        // 2. Cek apakah HP mendukung NATIVE BARCODE SCANNER (Super Cepat)
+        const isNativeSupported = 'BarcodeDetector' in window;
+        let nativeDetector = null;
+        if (isNativeSupported) {
+          nativeDetector = new window.BarcodeDetector({ 
+            formats: ['code_128', 'code_39', 'ean_13', 'qr_code'] 
+          });
+        }
+
+        // 3. Scan Loop Manual
         const scanFrame = async () => {
           if (isScanned || !videoRef.current) return;
 
           try {
-            // Proses decode frame saat ini
-            const result = await codeReader.decodeFromVideoElement(videoRef.current);
-            
-            if (result && !isScanned) {
-              isScanned = true;
-              
-              // EXTRA AMAN: Ekstrak teks tanpa memicu TypeError
-              const textResult = result.text || (typeof result.getText === 'function' ? result.getText() : '');
-              
-              if (textResult) {
-                setSerialNumber(textResult.trim().toUpperCase());
-                setIsScanning(false); // Otomatis menutup modal dan trigger cleanup
-                return; // Berhenti looping
-              } else {
-                isScanned = false;
+            let foundText = null;
+
+            // ENGINE 1: Pakai Native API (Instan untuk Android Chrome)
+            if (nativeDetector) {
+              const barcodes = await nativeDetector.detect(videoRef.current);
+              if (barcodes.length > 0) {
+                foundText = barcodes[0].rawValue;
               }
             }
+
+            // ENGINE 2: Fallback ke ZXing (Untuk iOS / Browser lama)
+            if (!foundText) {
+              const result = await codeReader.decodeFromVideoElement(videoRef.current);
+              if (result) {
+                foundText = result.text || (typeof result.getText === 'function' ? result.getText() : '');
+              }
+            }
+
+            // Kalau barcode ketemu
+            if (foundText) {
+              isScanned = true; // Kunci biar ga double-scan
+              setSerialNumber(foundText.trim().toUpperCase());
+              setIsScanning(false); // Otomatis trigger cleanup & tutup modal
+              return; 
+            }
           } catch (err) {
-            // ZXing akan melempar error (NotFoundException) jika barcode belum terbaca di frame ini. 
-            // Kita abaikan secara diam-diam agar loop terus berjalan.
+            // Abaikan error NotFoundException dari ZXing, biarkan loop lanjut
           }
 
-          // Lanjut ke frame berikutnya jika belum terbaca
+          // Lanjut frame berikutnya tiap 150ms
           if (!isScanned) {
-            timeoutId = setTimeout(scanFrame, 150);
+            scanTimeout = setTimeout(scanFrame, 150);
           }
         };
 
@@ -163,16 +179,16 @@ export default function Pemeriksaan() {
 
     startScanner();
 
-    // CLEANUP KETIKA MODAL DITUTUP
+    // CLEANUP KETIKA MODAL DITUTUP (Mencegah Kamera Nyala Terus)
     return () => {
-      isScanned = true; // Hentikan loop aktif
-      if (timeoutId) clearTimeout(timeoutId);
+      isScanned = true;
+      if (scanTimeout) clearTimeout(scanTimeout);
       
       if (localStream) {
-        localStream.getTracks().forEach(track => track.stop()); // Matikan lampu kamera
+        localStream.getTracks().forEach(track => track.stop());
       }
       if (codeReader) {
-        codeReader.reset(); // Matikan internal engine ZXing
+        codeReader.reset();
       }
       scannerTrackRef.current = null;
     };
@@ -183,7 +199,7 @@ export default function Pemeriksaan() {
     try {
       const track = scannerTrackRef.current;
       if (!track) {
-        alert("Kamera belum aktif secara sempurna. Tunggu sebentar.");
+        alert("Kamera belum siap, tunggu sebentar.");
         return;
       }
 
@@ -194,8 +210,7 @@ export default function Pemeriksaan() {
       setIsTorchOn(nextState);
 
     } catch (err) {
-      console.error("Gagal menyalakan senter:", err);
-      alert("Browser/Perangkat ini memblokir akses senter.");
+      alert("Senter gagal dinyalakan. HP/Browser ini mungkin memblokir akses senter via web.");
     }
   };
   // ========================================================
@@ -298,7 +313,7 @@ export default function Pemeriksaan() {
   return (
     <div className="max-w-4xl mx-auto pb-24 font-sans relative select-none">
       
-      {/* MODAL SCANNER ZXING */}
+      {/* MODAL SCANNER HYBRID */}
       {isScanning && (
         <div className="fixed inset-0 bg-slate-900/95 z-[120] flex flex-col justify-center items-center backdrop-blur-md animate-in fade-in duration-300">
           <div className="w-full max-w-md bg-white rounded-3xl overflow-hidden shadow-2xl m-4 flex flex-col animate-in zoom-in-95 duration-300">
