@@ -199,23 +199,28 @@ export default function Pemeriksaan() {
   // FUNGSI SENTER (ASLI KODEMU TANPA DIUBAH SAMA SEKALI)
   // ========================================================
   const toggleTorch = async () => {
-    try {
-      const track = scannerTrackRef.current;
-      if (!track) {
-        alert("Kamera belum siap, tunggu sebentar.");
-        return;
-      }
-
-      const nextState = !isTorchOn;
-      await track.applyConstraints({
-        advanced: [{ torch: nextState }]
-      });
-      setIsTorchOn(nextState);
-
-    } catch (err) {
-      alert("Senter gagal dinyalakan. HP/Browser ini mungkin memblokir akses senter via web.");
+  try {
+    const track = scannerTrackRef.current;
+    if (!track) {
+      alert("Kamera belum siap, tunggu sebentar.");
+      return;
     }
-  };
+
+    const capabilities = track.getCapabilities?.();
+    if (!capabilities?.torch) {
+      alert("Fitur senter tidak didukung di perangkat/browser ini.");
+      return;
+    }
+
+    const nextState = !isTorchOn;
+    await track.applyConstraints({ advanced: [{ torch: nextState }] });
+    setIsTorchOn(nextState);
+
+  } catch (err) {
+    console.error("Torch error:", err);
+    alert("Senter gagal dinyalakan. HP/Browser ini mungkin memblokir akses senter via web.");
+  }
+};
   // ========================================================
 
   useEffect(() => { return () => { photos.forEach(p => URL.revokeObjectURL(p.preview)); }; }, [photos]);
