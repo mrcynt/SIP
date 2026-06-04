@@ -5,7 +5,7 @@ import { collection, addDoc, runTransaction, doc, query, where, getDocs, orderBy
 import { dbLocal } from '../db/offlineDB';
 import { fetchWithRetry } from '../utils/network';
 
-// IMPORT ZXING SEBAGAI ENGINE UTAMA SESUAI PERMINTAAN
+// IMPORT ZXING SEBAGAI ENGINE UTAMA SESUAI PILIHANMU
 import { BrowserMultiFormatReader } from '@zxing/browser';
 
 const DRIVE_API_URL = "https://script.google.com/macros/s/AKfycbyJwmBp6pfgIgO9jSOl-RbQ6RMBTQPUX0zJFd_3TYqQ-egca9WNOImoKrLYW6PkQUDBYQ/exec";
@@ -60,10 +60,12 @@ export default function Pemeriksaan() {
   const [searchLaporan, setSearchLaporan] = useState('');
 
   // ========================================================
-  // STATE SCANNER ZXING MURNI + SENTER ASLI
+  // STATE SCANNER HYBRID DENGAN UKURAN KOTAK BISA DIATUR
   // ========================================================
   const [isScanning, setIsScanning] = useState(false);
   const [isTorchOn, setIsTorchOn] = useState(false);
+  const [boxWidth, setBoxWidth] = useState(340);
+  const [boxHeight, setBoxHeight] = useState(140);
   
   const videoRef = useRef(null);
   const scannerTrackRef = useRef(null);
@@ -80,7 +82,7 @@ export default function Pemeriksaan() {
 
     const startScanner = async () => {
       try {
-        // Ambil stream kamera dengan resolusi 720p sesuai kodemu
+        // Ambil stream kamera dengan resolusi 720p persis seperti kodemu
         localStream = await navigator.mediaDevices.getUserMedia({
           video: {
             facingMode: "environment",
@@ -97,7 +99,7 @@ export default function Pemeriksaan() {
         const track = localStream.getVideoTracks()[0];
         scannerTrackRef.current = track;
 
-        // Cek Native Barcode Detector
+        // Cek dukungan Native Barcode Detector
         const isNativeSupported = 'BarcodeDetector' in window;
         let nativeDetector = null;
         if (isNativeSupported) {
@@ -106,6 +108,7 @@ export default function Pemeriksaan() {
           });
         }
 
+        // Scan Loop Manual yang diperbaiki agar anti-blank / crash
         const scanFrame = async () => {
           if (isScanned || !videoRef.current) return;
 
@@ -118,13 +121,13 @@ export default function Pemeriksaan() {
               if (barcodes.length > 0) foundText = barcodes[0].rawValue;
             }
 
-            // 2. Jika gagal, pakai ZXing dengan fungsi decodeOnce agar tidak memori leak
+            // 2. Jika gagal, baru pakai ZXing secara aman (decodeOnce) agar memory tidak bocor
             if (!foundText) {
               try {
                 const result = await codeReader.decodeOnceFromVideoElement(videoRef.current);
                 if (result) foundText = result.text;
               } catch (e) {
-                // Abaikan error per frame
+                // Abaikan error sewaktu tidak mendeteksi objek barcode
               }
             }
 
@@ -135,22 +138,20 @@ export default function Pemeriksaan() {
               
               setSerialNumber(cleanValue);
               
-              // Beri jeda sedikit lalu tutup modal
-              setTimeout(() => {
-                setIsScanning(false);
-              }, 200);
-              
+              // Tutup scanner secara instan dan aman
+              setIsScanning(false);
               return; 
             }
           } catch (err) {
             console.error("Scan error:", err);
           }
 
-          if (!isScanned) {
+          if (!isScanned && isScanning) {
             scanTimeout = setTimeout(scanFrame, 150);
           }
         };
 
+        // Mulai loop pembacaan
         scanFrame();
 
       } catch (err) {
@@ -162,7 +163,7 @@ export default function Pemeriksaan() {
 
     startScanner();
 
-    // CLEANUP YANG DIPERBAIKI AGAR TIDAK BLANK PUTIH SAAT DITUTUP
+    // CLEANUP MUTLAK: Mematikan track kamera dengan bersih tanpa crash
     return () => {
       isScanned = true;
       if (scanTimeout) clearTimeout(scanTimeout);
@@ -175,7 +176,7 @@ export default function Pemeriksaan() {
   }, [isScanning]);
 
   // ========================================================
-  // FUNGSI SENTER 100% ASLI MILIKMU TANPA DIUTAK-ATIK
+  // FUNGSI SENTER ASLI KODEMU (TIDAK DISENTUH / DIUBAH)
   // ========================================================
   const toggleTorch = async () => {
     try {
@@ -288,14 +289,10 @@ export default function Pemeriksaan() {
     } catch (err) { console.error(err); setError(`Gagal mengirim data: ${err.message}`); setIsUploading(false); }
   };
 
-  const progressCount = uploadMode === 'kategori' ? KATEGORI_WAJIB.filter(kat => photos.some(p => p.kategori === kat)).length : photos.length;
-  const progressPercent = uploadMode === 'kategori' ? Math.round((progressCount / KATEGORI_WAJIB.length) * 100) : (photos.length > 0 ? 100 : 0);
-  const filteredLaporan = laporanRecords.filter(rec => rec.serialNumber?.toLowerCase().includes(searchLaporan.toLowerCase()) || rec.petugas?.toLowerCase().includes(searchLaporan.toLowerCase()));
-
   return (
     <div className="max-w-4xl mx-auto pb-24 font-sans relative select-none">
       
-      {/* MODAL SCANNER ZXING MURNI */}
+      {/* MODAL SCANNER HYBRID */}
       {isScanning && (
         <div className="fixed inset-0 bg-slate-900/95 z-[120] flex flex-col justify-center items-center backdrop-blur-md animate-in fade-in duration-300">
           <div className="w-full max-w-md bg-white rounded-3xl overflow-hidden shadow-2xl m-4 flex flex-col animate-in zoom-in-95 duration-300">
@@ -307,6 +304,7 @@ export default function Pemeriksaan() {
               <button onClick={() => setIsScanning(false)} className="text-slate-300 hover:text-white bg-slate-700 hover:bg-red-500 rounded-full w-8 h-8 flex items-center justify-center transition-colors font-bold">✕</button>
             </div>
             
+            {/* AREA VIDEO KAMERA */}
             <div className="relative bg-black w-full h-[360px] flex items-center justify-center overflow-hidden shrink-0">
               <video 
                 ref={videoRef}
@@ -315,24 +313,46 @@ export default function Pemeriksaan() {
                 playsInline
               />
               
+              {/* TARGET BOX OVERLAY */}
               <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                <div className="w-[80%] h-[140px] border-2 border-[#34A853] relative shadow-[0_0_0_9999px_rgba(0,0,0,0.65)]">
+                <div style={{ width: `${boxWidth}px`, height: `${boxHeight}px` }} className="border-2 border-[#34A853] relative shadow-[0_0_0_9999px_rgba(0,0,0,0.65)] transition-all duration-150">
                   <div className="absolute top-0 left-0 w-4 h-4 border-t-4 border-l-4 border-[#34A853] -mt-1 -ml-1"></div>
                   <div className="absolute top-0 right-0 w-4 h-4 border-t-4 border-r-4 border-[#34A853] -mt-1 -mr-1"></div>
                   <div className="absolute bottom-0 left-0 w-4 h-4 border-b-4 border-l-4 border-[#34A853] -mb-1 -ml-1"></div>
                   <div className="absolute bottom-0 right-0 w-4 h-4 border-b-4 border-r-4 border-[#34A853] -mb-1 -mr-1"></div>
                   <div className="absolute w-full h-0.5 bg-red-500/90 top-1/2 left-0 transform -translate-y-1/2 animate-pulse shadow-[0_0_8px_rgba(239,68,68,1)]"></div>
                 </div>
-                <p className="text-white text-xs font-bold mt-8 bg-black/70 px-4 py-2 rounded-full tracking-wide text-center leading-relaxed backdrop-blur-sm border border-white/10">
-                  Arahkan garis merah ke Barcode.<br/>Jauhkan layar 10-15cm agar fokus.
-                </p>
               </div>
             </div>
 
+            {/* PANEL KONTROL UKURAN & SENTER */}
             <div className="p-4 bg-slate-50 border-t border-slate-100 flex flex-col gap-3 shrink-0">
-              <button type="button" onClick={toggleTorch} className={`w-full py-3.5 rounded-xl font-bold text-sm transition-all shadow-sm border ${isTorchOn ? 'bg-amber-400 text-amber-900 border-amber-300' : 'bg-slate-800 text-white border-transparent'}`}>
-                {isTorchOn ? '💡 Matikan Senter' : '🔦 Nyalakan Senter'}
-              </button>
+              <div className="flex justify-between items-center text-xs font-bold text-slate-600">
+                <span>Sesuaikan Panduan Bidik:</span>
+                <button type="button" onClick={toggleTorch} className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border text-xs font-bold transition-all ${isTorchOn ? 'bg-amber-400 text-amber-900 border-amber-300 shadow-sm' : 'bg-slate-800 text-white border-transparent'}`}>
+                  {isTorchOn ? '💡 Matikan Senter' : '🔦 Saklar Senter'}
+                </button>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex items-center justify-between bg-white p-2 rounded-xl border border-slate-200">
+                  <span className="text-[11px] font-black text-slate-400 pl-1 uppercase">Lebar</span>
+                  <div className="flex items-center gap-2">
+                    <button type="button" onClick={() => setBoxWidth(w => Math.max(160, w - 20))} className="w-8 h-8 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-lg font-black transition-colors">-</button>
+                    <span className="font-mono text-xs font-black text-slate-700 w-12 text-center">{boxWidth}px</span>
+                    <button type="button" onClick={() => setBoxWidth(w => Math.min(360, w + 20))} className="w-8 h-8 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-lg font-black transition-colors">+</button>
+                  </div>
+                </div>
+                
+                <div className="flex items-center justify-between bg-white p-2 rounded-xl border border-slate-200">
+                  <span className="text-[11px] font-black text-slate-400 pl-1 uppercase">Tinggi</span>
+                  <div className="flex items-center gap-2">
+                    <button type="button" onClick={() => setBoxHeight(h => Math.max(40, h - 15))} className="w-8 h-8 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-lg font-black transition-colors">-</button>
+                    <span className="font-mono text-xs font-black text-slate-700 w-12 text-center">{boxHeight}px</span>
+                    <button type="button" onClick={() => setBoxHeight(h => Math.min(200, h + 15))} className="w-8 h-8 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-lg font-black transition-colors">+</button>
+                  </div>
+                </div>
+              </div>
             </div>
 
           </div>
@@ -416,7 +436,7 @@ export default function Pemeriksaan() {
                     autoFocus disabled={isCheckingSN}
                   />
                   <button type="button" onClick={() => setIsScanning(true)} disabled={isCheckingSN} className="absolute right-2 w-11 h-11 flex items-center justify-center text-slate-400 hover:text-white bg-white hover:bg-[#1A73E8] border border-slate-200 hover:border-transparent rounded-xl transition-all shadow-sm group" title="Buka Kamera Scanner">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 transform group-hover:scale-110 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9zM15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 transform group-hover:scale-110 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812-1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9zM15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
                   </button>
                 </div>
                 <button type="submit" disabled={isCheckingSN} className="px-6 py-2.5 bg-[#1A73E8] hover:bg-[#1557B0] disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-bold text-xs rounded-full transition-colors shadow-sm flex items-center gap-2">
