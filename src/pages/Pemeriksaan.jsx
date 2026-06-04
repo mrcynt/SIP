@@ -4,7 +4,9 @@ import { db } from '../config/firebase';
 import { collection, addDoc, runTransaction, doc, query, where, getDocs, orderBy } from 'firebase/firestore';
 import { dbLocal } from '../db/offlineDB';
 import { fetchWithRetry } from '../utils/network';
-import { Html5Qrcode } from 'html5-qrcode'; 
+
+// IMPORT ZXING SEBAGAI CADANGAN
+import { BrowserMultiFormatReader } from '@zxing/browser';
 
 const DRIVE_API_URL = "https://script.google.com/macros/s/AKfycbyJwmBp6pfgIgO9jSOl-RbQ6RMBTQPUX0zJFd_3TYqQ-egca9WNOImoKrLYW6PkQUDBYQ/exec";
 
@@ -58,73 +60,168 @@ export default function Pemeriksaan() {
   const [searchLaporan, setSearchLaporan] = useState('');
 
   // ========================================================
-  // STATE BARU: UKURAN KOTAK SCANNER YANG BISA DIATUR USER
+  // STATE SCANNER HYBRID (NATIVE API + ZXING)
   // ========================================================
   const [isScanning, setIsScanning] = useState(false);
   const [isTorchOn, setIsTorchOn] = useState(false);
-  const [boxWidth, setBoxWidth] = useState(320);  // Lebar awal standar
-  const [boxHeight, setBoxHeight] = useState(100); // Tinggi awal standar
-  const scannerRef = useRef(null);
+  const [boxWidth, setBoxWidth] = useState(340);
+  const [boxHeight, setBoxHeight] = useState(140);
+  
+  const videoRef = useRef(null);
+  const scannerTrackRef = useRef(null);
 
-  // Jalankan ulang kamera setiap kali status scan aktif ATAU ukuran kotak diubah oleh user
   useEffect(() => {
-    if (isScanning) {
-      setTimeout(() => {
-        const html5QrCode = new Html5Qrcode("reader");
-        scannerRef.current = html5QrCode;
-        
-        html5QrCode.start(
-          { facingMode: "environment" }, 
-          { 
-            fps: 15,
-            qrbox: { width: boxWidth, height: boxHeight }, // Menggunakan state dinamis buatan user
-            disableFlip: false
-          },
-          (decodedText) => {
-            setSerialNumber(decodedText.toUpperCase()); 
-            setIsScanning(false); 
-            html5QrCode.stop().catch(console.error); 
-          },
-          (errorMessage) => { /* Abaikan error loop */ }
-        ).catch(err => {
-          console.error(err);
-          setError("Kamera gagal diakses. Pastikan browser memiliki izin kamera.");
-          setIsScanning(false);
+    if (!isScanning) return;
+
+    const codeReader = new BrowserMultiFormatReader();
+    let localStream = null;
+    let isScanned = false; 
+    let scanTimeout = null;
+
+    setIsTorchOn(false);
+
+    const startScanner = async () => {
+      try {
+        // 1. Ambil stream kamera dengan resolusi 720p (Lebih ringan & cepat diproses JS)
+        localStream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: "environment",
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          }
         });
-      }, 200);
-    }
 
-    return () => {
-      if (scannerRef.current && scannerRef.current.isScanning) {
-        scannerRef.current.stop().catch(console.error);
-        scannerRef.current = null;
-      }
-    };
-  }, [isScanning, boxWidth, boxHeight]); // Memicu auto-restart mulus saat tombol ukuran ditekan
+        if (!videoRef.current) return;
+        videoRef.current.srcObject = localStream;
+        videoRef.current.setAttribute("playsinline", true);
+        await videoRef.current.play();
 
-  // FUNGSI SENTER AMAN (KEMBALI KE METODE AWAL YANG MENYALA)
-  // FUNGSI SENTER
-const toggleTorch = async () => {
+        const track = localStream.getVideoTracks()[0];
+        scannerTrackRef.current = track;
+
+        // Autofocus & Zoom Sedikit biar barcode makin jelas
+        setTimeout(async () => {
+          try {
+            const capabilities = track.getCapabilities?.() || {};
+            const advanced = [];
+            if (capabilities.focusMode?.includes("continuous")) {
+              advanced.push({ focusMode: "continuous" });
+            }
+            if (capabilities.zoom) {
+              advanced.push({ zoom: Math.min(1.5, capabilities.zoom.max || 1) });
+            }
+            if (advanced.length > 0) {
+              await track.applyConstraints({ advanced });
+            }
+          } catch (e) {
+            console.log("Autofocus manual tidak didukung");
+          }
+        }, 1000);
+
+        // 2. Cek apakah HP mendukung NATIVE BARCODE SCANNER (Super Cepat)
+        const isNativeSupported = 'BarcodeDetector' in window;
+        let nativeDetector = null;
+        if (isNativeSupported) {
+          nativeDetector = new window.BarcodeDetector({ 
+            formats: ['code_128', 'code_39', 'ean_13', 'qr_code'] 
+          });
+        }
+
+        // 3. Scan Loop Manual
+       // Ganti blok scanFrame di dalam useEffect kamu dengan yang ini:
+const scanFrame = async () => {
+  if (isScanned || !videoRef.current) return;
+
   try {
-    const track = scannerTrackRef.current; // Mengambil track video kamera yang sedang aktif
-    if (!track) {
-      alert("Kamera belum siap, tunggu sebentar.");
-      return;
+    let foundText = null;
+
+    // 1. Coba Native Barcode Detector
+    if (nativeDetector) {
+      const barcodes = await nativeDetector.detect(videoRef.current);
+      if (barcodes.length > 0) foundText = barcodes[0].rawValue;
     }
 
-    const nextState = !isTorchOn; // Membalik status (ON jadi OFF, OFF jadi ON)
-    
-    // INI KUNCI UTAMANYA: Mengirim constraint 'torch' ke hardware kamera
-    await track.applyConstraints({
-      advanced: [{ torch: nextState }]
-    });
-    
-    setIsTorchOn(nextState); // Update tampilan tombol di layar
+    // 2. Jika gagal, baru pakai ZXing
+    if (!foundText) {
+      try {
+        const result = await codeReader.decodeFromVideoElement(videoRef.current);
+        if (result) foundText = result.text;
+      } catch (e) {
+        // Abaikan error saat tidak ketemu barcode
+      }
+    }
+
+    // 3. JIKA BARCODE KETEMU (Logika perbaikan di sini)
+    if (foundText) {
+      isScanned = true;
+      const cleanValue = foundText.trim().toUpperCase();
+      
+      // Update state data
+      setSerialNumber(cleanValue);
+      
+      // Beri jeda 300ms biar layar sempat transisi, baru tutup scanner
+      setTimeout(() => {
+        setIsScanning(false);
+        // Tambahkan logic untuk auto-scroll atau focus jika perlu
+      }, 300);
+      
+      return; 
+    }
   } catch (err) {
-    // Kalau HP atau Browser tidak mengizinkan akses lampu, akan masuk sini
-    alert("Senter gagal dinyalakan. HP/Browser ini mungkin memblokir akses senter via web.");
+    console.error("Scan error:", err);
+  }
+
+  if (!isScanned) {
+    scanTimeout = setTimeout(scanFrame, 150);
   }
 };
+
+        // Mulai loop
+        scanFrame();
+
+      } catch (err) {
+        console.error("Gagal inisialisasi kamera:", err);
+        setError("Kamera gagal diakses. Pastikan izin kamera sudah diberikan.");
+        setIsScanning(false);
+      }
+    };
+
+    startScanner();
+
+    // CLEANUP KETIKA MODAL DITUTUP (Mencegah Kamera Nyala Terus)
+    return () => {
+      isScanned = true;
+      if (scanTimeout) clearTimeout(scanTimeout);
+      
+      if (localStream) {
+        localStream.getTracks().forEach(track => track.stop());
+      }
+      if (codeReader) {
+        codeReader.reset();
+      }
+      scannerTrackRef.current = null;
+    };
+  }, [isScanning]);
+
+  // FUNGSI SENTER
+  const toggleTorch = async () => {
+    try {
+      const track = scannerTrackRef.current;
+      if (!track) {
+        alert("Kamera belum siap, tunggu sebentar.");
+        return;
+      }
+
+      const nextState = !isTorchOn;
+      await track.applyConstraints({
+        advanced: [{ torch: nextState }]
+      });
+      setIsTorchOn(nextState);
+
+    } catch (err) {
+      alert("Senter gagal dinyalakan. HP/Browser ini mungkin memblokir akses senter via web.");
+    }
+  };
   // ========================================================
 
   useEffect(() => { return () => { photos.forEach(p => URL.revokeObjectURL(p.preview)); }; }, [photos]);
@@ -225,7 +322,7 @@ const toggleTorch = async () => {
   return (
     <div className="max-w-4xl mx-auto pb-24 font-sans relative select-none">
       
-      {/* MODAL SCANNER DENGAN KONTROL RESIZE MANUVAL OLEH USER */}
+      {/* MODAL SCANNER HYBRID */}
       {isScanning && (
         <div className="fixed inset-0 bg-slate-900/95 z-[120] flex flex-col justify-center items-center backdrop-blur-md animate-in fade-in duration-300">
           <div className="w-full max-w-md bg-white rounded-3xl overflow-hidden shadow-2xl m-4 flex flex-col animate-in zoom-in-95 duration-300">
@@ -239,9 +336,14 @@ const toggleTorch = async () => {
             
             {/* AREA VIDEO KAMERA */}
             <div className="relative bg-black w-full h-[360px] flex items-center justify-center overflow-hidden shrink-0">
-              <div id="reader" className="w-full h-full object-cover"></div>
+              <video 
+                ref={videoRef}
+                className="w-full h-full object-cover" 
+                muted
+                playsInline
+              />
               
-              {/* TARGET BOX OVERLAY (Ukurannya Mengikuti State boxWidth & boxHeight) */}
+              {/* TARGET BOX OVERLAY (Visual Guide) */}
               <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                 <div style={{ width: `${boxWidth}px`, height: `${boxHeight}px` }} className="border-2 border-[#34A853] relative shadow-[0_0_0_9999px_rgba(0,0,0,0.65)] transition-all duration-150">
                   <div className="absolute top-0 left-0 w-4 h-4 border-t-4 border-l-4 border-[#34A853] -mt-1 -ml-1"></div>
@@ -253,16 +355,15 @@ const toggleTorch = async () => {
               </div>
             </div>
 
-            {/* PANEL KONTROL UKURAN & SENTER INDEPENDEN */}
+            {/* PANEL KONTROL UKURAN & SENTER */}
             <div className="p-4 bg-slate-50 border-t border-slate-100 flex flex-col gap-3 shrink-0">
               <div className="flex justify-between items-center text-xs font-bold text-slate-600">
-                <span>Sesuaikan Kotak Bidik Di Lapangan:</span>
+                <span>Sesuaikan Panduan Bidik:</span>
                 <button type="button" onClick={toggleTorch} className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border text-xs font-bold transition-all ${isTorchOn ? 'bg-amber-400 text-amber-900 border-amber-300 shadow-sm' : 'bg-slate-800 text-white border-transparent'}`}>
                   {isTorchOn ? '💡 Senter Menyala' : '🔦 Saklar Senter'}
                 </button>
               </div>
               
-              {/* TOMBOL ADJUSTMENT UKURAN (+/-) */}
               <div className="grid grid-cols-2 gap-3">
                 <div className="flex items-center justify-between bg-white p-2 rounded-xl border border-slate-200">
                   <span className="text-[11px] font-black text-slate-400 pl-1 uppercase">Lebar</span>
