@@ -63,7 +63,6 @@ export default function Pemeriksaan() {
   const [isScanning, setIsScanning] = useState(false);
   const [isTorchOn, setIsTorchOn] = useState(false);
   
-  // Ukuran default kita buat lega: 340 x 140
   const [boxWidth, setBoxWidth] = useState(340);
   const [boxHeight, setBoxHeight] = useState(140);
   
@@ -76,10 +75,15 @@ export default function Pemeriksaan() {
         scannerRef.current = html5QrCode;
         
         html5QrCode.start(
-          { facingMode: "environment" }, 
+          // KITA SUNTIKKAN PENGATURAN RESOLUSI HD 720p DI SINI
+          { 
+            facingMode: "environment",
+            width: { ideal: 1280, min: 640 }, 
+            height: { ideal: 720, min: 480 } 
+          }, 
           { 
             fps: 15,
-            qrbox: { width: boxWidth, height: boxHeight }, // <-- Ikut ukuran dari tombol + / -
+            qrbox: { width: boxWidth, height: boxHeight },
             disableFlip: false
           },
           (decodedText) => {
@@ -88,7 +92,17 @@ export default function Pemeriksaan() {
             html5QrCode.stop().catch(console.error); 
           },
           (errorMessage) => { /* Abaikan error loop scan */ }
-        ).catch(err => {
+        ).then(() => {
+          // SETELAH KAMERA NYALA, KITA PAKSA AUTO-FOCUS MENYALA TERUS
+          if (scannerRef.current) {
+            scannerRef.current.applyVideoConstraints({
+              advanced: [{ focusMode: "continuous" }]
+            }).catch(e => {
+              // Abaikan jika HP tidak mensupport kontrol fokus manual
+              console.log("Auto-focus kontinu berjalan otomatis", e);
+            });
+          }
+        }).catch(err => {
           console.error(err);
           setError("Kamera gagal diakses. Pastikan browser memiliki izin kamera.");
           setIsScanning(false);
@@ -102,10 +116,10 @@ export default function Pemeriksaan() {
         scannerRef.current = null;
       }
     };
-  }, [isScanning, boxWidth, boxHeight]); // Auto-restart halus saat ukuran kotak diubah
+  }, [isScanning, boxWidth, boxHeight]); 
 
   // ========================================================
-  // LOGIKA SENTER (DIAMBIL PLEK-KETIPLEK DARI KODE KAMU)
+  // LOGIKA SENTER
   // ========================================================
   const toggleTorch = async () => {
     try {
@@ -115,7 +129,6 @@ export default function Pemeriksaan() {
       }
 
       const nextState = !isTorchOn;
-      // Gunakan applyVideoConstraints persis seperti pola aslimu
       await scannerRef.current.applyVideoConstraints({
         advanced: [{ torch: nextState }]
       });
@@ -272,9 +285,9 @@ export default function Pemeriksaan() {
             <div className="relative bg-black w-full h-[360px] flex items-center justify-center overflow-hidden shrink-0">
               <div id="reader" className="w-full h-full object-cover"></div>
               
-              {/* TARGET BOX OVERLAY (Dinamis Sesuai Tombol User) */}
+              {/* TARGET BOX OVERLAY */}
               <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                <div style={{ width: `${boxWidth}px`, height: `${boxHeight}px` }} className="border-2 border-[#34A853] relative shadow-[0_0_0_9999px_rgba(0,0,0,0.65)] transition-all duration-200">
+                <div style={{ width: `${boxWidth}px`, height: `${boxHeight}px` }} className="border-2 border-[#34A853] relative shadow-[0_0_0_9999px_rgba(0,0,0,0.65)] transition-all duration-150">
                   <div className="absolute top-0 left-0 w-4 h-4 border-t-4 border-l-4 border-[#34A853] -mt-1 -ml-1"></div>
                   <div className="absolute top-0 right-0 w-4 h-4 border-t-4 border-r-4 border-[#34A853] -mt-1 -mr-1"></div>
                   <div className="absolute bottom-0 left-0 w-4 h-4 border-b-4 border-l-4 border-[#34A853] -mb-1 -ml-1"></div>
