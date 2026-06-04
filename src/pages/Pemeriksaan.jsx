@@ -4,10 +4,9 @@ import { db } from '../config/firebase';
 import { collection, addDoc, runTransaction, doc, query, where, getDocs, orderBy } from 'firebase/firestore';
 import { dbLocal } from '../db/offlineDB';
 import { fetchWithRetry } from '../utils/network';
-import {
-  Html5Qrcode,
-  Html5QrcodeSupportedFormats
-} from "html5-qrcode";
+
+// IMPORT ZXING SEBAGAI PENGGANTI HTML5-QRCODE
+import { BrowserMultiFormatReader } from '@zxing/browser';
 
 const DRIVE_API_URL = "https://script.google.com/macros/s/AKfycbyJwmBp6pfgIgO9jSOl-RbQ6RMBTQPUX0zJFd_3TYqQ-egca9WNOImoKrLYW6PkQUDBYQ/exec";
 
@@ -61,81 +60,70 @@ export default function Pemeriksaan() {
   const [searchLaporan, setSearchLaporan] = useState('');
 
   // ========================================================
-  // STATE BARU: UKURAN KOTAK SCANNER YANG BISA DIATUR USER
+  // STATE SCANNER (MIGRASI KE ZXING)
   // ========================================================
   const [isScanning, setIsScanning] = useState(false);
   const [isTorchOn, setIsTorchOn] = useState(false);
-  const [boxWidth, setBoxWidth] = useState(380);
-  const [boxHeight, setBoxHeight] = useState(120);
-  const scannerRef = useRef(null);
+  // Default ukuran sudah dibuat ideal untuk Barcode Kardus Hisense (Memanjang)
+  const [boxWidth, setBoxWidth] = useState(350);
+  const [boxHeight, setBoxHeight] = useState(180);
+  
+  const videoRef = useRef(null);
+  const scannerTrackRef = useRef(null); // Menyimpan Track Video buat fungsi Senter
 
-  // Jalankan ulang kamera setiap kali status scan aktif
   useEffect(() => {
     if (!isScanning) return;
 
-    let html5QrCode;
-    setIsTorchOn(false); // Reset torch status saat buka kamera baru
+    let codeReader;
+    let localStream;
+    setIsTorchOn(false);
 
     const startScanner = async () => {
       try {
-        html5QrCode = new Html5Qrcode("reader", {
-          formatsToSupport: [
-            Html5QrcodeSupportedFormats.CODE_128,
-            Html5QrcodeSupportedFormats.CODE_39,
-            Html5QrcodeSupportedFormats.EAN_13,
-            Html5QrcodeSupportedFormats.EAN_8,
-            Html5QrcodeSupportedFormats.QR_CODE
-          ]
+        // Inisialisasi ZXing Reader
+        codeReader = new BrowserMultiFormatReader();
+
+        // 1. Ambil akses stream kamera manual dengan resolusi tinggi
+        localStream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: "environment",
+            width: { ideal: 1920 },
+            height: { ideal: 1080 }
+          }
         });
 
-        scannerRef.current = html5QrCode;
-
-        await html5QrCode.start(
-          { facingMode: "environment" },
-          {
-            fps: 15, // Dibuat 15 agar punya waktu ekstra untuk memproses barcode panjang
-            // qrbox dihapus agar area scan menggunakan full frame (sangat penting untuk barcode panjang)
-            disableFlip: false,
-            experimentalFeatures: {
-              useBarCodeDetectorIfSupported: true
-            }
-          },
-          async (decodedText) => {
-            setSerialNumber(decodedText.trim().toUpperCase());
-            try {
-              await html5QrCode.stop();
-            } catch (e) {
-              console.log("Stop scanner saat sukses error kecil:", e);
-            }
-            setIsScanning(false);
-          },
-          (errorMessage) => {
-            // Abaikan error frame scanning untuk mencegah console penuh
-          }
-        );
-
-        // Langsung terapkan fokus & sedikit zoom jika didukung
-        const track = html5QrCode.getRunningTrack?.();
-        if (track) {
-          const capabilities = track.getCapabilities?.() || {};
-          const advancedConstraints = [];
-
-          if (capabilities.focusMode?.includes("continuous")) {
-            advancedConstraints.push({ focusMode: "continuous" });
-          }
-          if (capabilities.zoom) {
-            // Pakai max 1.5x zoom supaya resolusi tetap cukup tajam untuk barcode kecil
-            advancedConstraints.push({ zoom: Math.min(1.5, capabilities.zoom.max || 1) });
-          }
-
-          if (advancedConstraints.length > 0) {
-            try {
-              await track.applyConstraints({ advanced: advancedConstraints });
-            } catch (err) {
-              console.log("Gagal apply auto-focus/zoom:", err);
-            }
-          }
+        // 2. Sambungkan stream ke elemen <video> di UI
+        if (videoRef.current) {
+          videoRef.current.srcObject = localStream;
+          videoRef.current.setAttribute("playsinline", true); // Wajib di iOS
+          await videoRef.current.play();
         }
+
+        // 3. Ambil video track pertama untuk kontrol Senter & AutoFocus
+        const track = localStream.getVideoTracks()[0];
+        scannerTrackRef.current = track; 
+
+        // Terapkan Continuous Focus secara paksa jika HP mendukung
+        setTimeout(async () => {
+          try {
+            const capabilities = track.getCapabilities?.() || {};
+            if (capabilities.focusMode?.includes("continuous")) {
+              await track.applyConstraints({ advanced: [{ focusMode: "continuous" }] });
+            }
+          } catch (e) {
+            console.log("Autofocus manual gagal/tidak didukung:", e);
+          }
+        }, 1000);
+
+        // 4. Mulai Proses Decode ZXing ke elemen video
+        codeReader.decodeFromVideoElement(videoRef.current, (result, error) => {
+          if (result) {
+            const textResult = result.getText().trim().toUpperCase();
+            setSerialNumber(textResult);
+            setIsScanning(false); // Otomatis trigger useEffect return untuk matiin kamera
+          }
+          // Error ZXing saat barcode belum pas akan di-spam ke sini, kita abaikan saja
+        });
 
       } catch (err) {
         console.error("Gagal inisialisasi scanner:", err);
@@ -146,28 +134,25 @@ export default function Pemeriksaan() {
 
     startScanner();
 
+    // CLEANUP KETIKA SCANNER DITUTUP
     return () => {
-      if (html5QrCode && html5QrCode.isScanning) {
-        html5QrCode.stop().catch(() => {});
+      if (codeReader) {
+        codeReader.reset(); // Matikan worker ZXing
       }
+      if (localStream) {
+        localStream.getTracks().forEach(track => track.stop()); // Matikan lampu kamera fisik
+      }
+      scannerTrackRef.current = null;
     };
   }, [isScanning]);
 
-  // FUNGSI SENTER YANG LEBIH AMAN
+  // FUNGSI SENTER AMAN (LANGSUNG TEMBAK KE TRACK NATIVE)
   const toggleTorch = async () => {
     try {
-      const track = scannerRef.current?.getRunningTrack?.();
+      const track = scannerTrackRef.current;
 
       if (!track) {
         alert("Kamera belum aktif secara sempurna. Tunggu sebentar.");
-        return;
-      }
-
-      // Gunakan getCapabilities yang aman
-      const capabilities = typeof track.getCapabilities === "function" ? track.getCapabilities() : {};
-
-      if (!capabilities.torch) {
-        alert("Perangkat/Browser ini tidak mendukung fitur senter via web.");
         return;
       }
 
@@ -181,7 +166,7 @@ export default function Pemeriksaan() {
 
     } catch (err) {
       console.error("Gagal menyalakan senter:", err);
-      alert("Gagal mengubah status senter. Coba muat ulang kamera.");
+      alert("Gagal menyalakan senter. Perangkat atau Browser ini tidak mengizinkan akses ke Flashlight web.");
     }
   };
   // ========================================================
@@ -284,7 +269,7 @@ export default function Pemeriksaan() {
   return (
     <div className="max-w-4xl mx-auto pb-24 font-sans relative select-none">
       
-      {/* MODAL SCANNER DENGAN KONTROL RESIZE MANUVAL OLEH USER */}
+      {/* MODAL SCANNER ZXING */}
       {isScanning && (
         <div className="fixed inset-0 bg-slate-900/95 z-[120] flex flex-col justify-center items-center backdrop-blur-md animate-in fade-in duration-300">
           <div className="w-full max-w-md bg-white rounded-3xl overflow-hidden shadow-2xl m-4 flex flex-col animate-in zoom-in-95 duration-300">
@@ -298,9 +283,16 @@ export default function Pemeriksaan() {
             
             {/* AREA VIDEO KAMERA */}
             <div className="relative bg-black w-full h-[360px] flex items-center justify-center overflow-hidden shrink-0">
-              <div id="reader" className="w-full h-full object-cover"></div>
+              {/* VIDEO TAG UNTUK ZXING */}
+              <video 
+                ref={videoRef}
+                className="w-full h-full object-cover" 
+                muted
+                autoPlay
+                playsInline
+              />
               
-              {/* TARGET BOX OVERLAY (Hanya Visual, Bukan Crop Asli) */}
+              {/* TARGET BOX OVERLAY (Visual Guide) */}
               <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                 <div style={{ width: `${boxWidth}px`, height: `${boxHeight}px` }} className="border-2 border-[#34A853] relative shadow-[0_0_0_9999px_rgba(0,0,0,0.65)] transition-all duration-150">
                   <div className="absolute top-0 left-0 w-4 h-4 border-t-4 border-l-4 border-[#34A853] -mt-1 -ml-1"></div>
@@ -312,7 +304,7 @@ export default function Pemeriksaan() {
               </div>
             </div>
 
-            {/* PANEL KONTROL UKURAN & SENTER INDEPENDEN */}
+            {/* PANEL KONTROL UKURAN & SENTER */}
             <div className="p-4 bg-slate-50 border-t border-slate-100 flex flex-col gap-3 shrink-0">
               <div className="flex justify-between items-center text-xs font-bold text-slate-600">
                 <span>Sesuaikan Panduan Bidik:</span>
@@ -321,7 +313,6 @@ export default function Pemeriksaan() {
                 </button>
               </div>
               
-              {/* TOMBOL ADJUSTMENT UKURAN (+/-) */}
               <div className="grid grid-cols-2 gap-3">
                 <div className="flex items-center justify-between bg-white p-2 rounded-xl border border-slate-200">
                   <span className="text-[11px] font-black text-slate-400 pl-1 uppercase">Lebar</span>
