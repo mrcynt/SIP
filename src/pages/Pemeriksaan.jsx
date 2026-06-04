@@ -5,7 +5,7 @@ import { collection, addDoc, runTransaction, doc, query, where, getDocs, orderBy
 import { dbLocal } from '../db/offlineDB';
 import { fetchWithRetry } from '../utils/network';
 
-// IMPORT ZXING SEBAGAI PENGGANTI HTML5-QRCODE
+// IMPORT ZXING
 import { BrowserMultiFormatReader } from '@zxing/browser';
 
 const DRIVE_API_URL = "https://script.google.com/macros/s/AKfycbyJwmBp6pfgIgO9jSOl-RbQ6RMBTQPUX0zJFd_3TYqQ-egca9WNOImoKrLYW6PkQUDBYQ/exec";
@@ -60,30 +60,29 @@ export default function Pemeriksaan() {
   const [searchLaporan, setSearchLaporan] = useState('');
 
   // ========================================================
-  // STATE SCANNER (MIGRASI KE ZXING)
+  // STATE SCANNER ZXING (ANTI CRASH)
   // ========================================================
   const [isScanning, setIsScanning] = useState(false);
   const [isTorchOn, setIsTorchOn] = useState(false);
-  // Default ukuran sudah dibuat ideal untuk Barcode Kardus Hisense (Memanjang)
   const [boxWidth, setBoxWidth] = useState(350);
   const [boxHeight, setBoxHeight] = useState(180);
   
   const videoRef = useRef(null);
-  const scannerTrackRef = useRef(null); // Menyimpan Track Video buat fungsi Senter
+  const scannerTrackRef = useRef(null);
 
   useEffect(() => {
     if (!isScanning) return;
 
-    let codeReader;
-    let localStream;
+    const codeReader = new BrowserMultiFormatReader();
+    let localStream = null;
+    let isScanned = false; // Flag pengaman agar tidak double-scan
+    let timeoutId = null;
+
     setIsTorchOn(false);
 
     const startScanner = async () => {
       try {
-        // Inisialisasi ZXing Reader
-        codeReader = new BrowserMultiFormatReader();
-
-        // 1. Ambil akses stream kamera manual dengan resolusi tinggi
+        // 1. Ambil stream kamera dengan resolusi tinggi (1080p)
         localStream = await navigator.mediaDevices.getUserMedia({
           video: {
             facingMode: "environment",
@@ -92,41 +91,71 @@ export default function Pemeriksaan() {
           }
         });
 
-        // 2. Sambungkan stream ke elemen <video> di UI
-        if (videoRef.current) {
-          videoRef.current.srcObject = localStream;
-          videoRef.current.setAttribute("playsinline", true); // Wajib di iOS
-          await videoRef.current.play();
-        }
+        if (!videoRef.current) return;
+        videoRef.current.srcObject = localStream;
+        videoRef.current.setAttribute("playsinline", true);
+        await videoRef.current.play();
 
-        // 3. Ambil video track pertama untuk kontrol Senter & AutoFocus
+        // Ambil track untuk Senter dan Autofocus
         const track = localStream.getVideoTracks()[0];
-        scannerTrackRef.current = track; 
+        scannerTrackRef.current = track;
 
-        // Terapkan Continuous Focus secara paksa jika HP mendukung
         setTimeout(async () => {
           try {
             const capabilities = track.getCapabilities?.() || {};
+            const advanced = [];
             if (capabilities.focusMode?.includes("continuous")) {
-              await track.applyConstraints({ advanced: [{ focusMode: "continuous" }] });
+              advanced.push({ focusMode: "continuous" });
+            }
+            if (capabilities.zoom) {
+              advanced.push({ zoom: Math.min(2, capabilities.zoom.max || 1) });
+            }
+            if (advanced.length > 0) {
+              await track.applyConstraints({ advanced });
             }
           } catch (e) {
-            console.log("Autofocus manual gagal/tidak didukung:", e);
+            console.log("Autofocus manual tidak didukung:", e);
           }
         }, 1000);
 
-        // 4. Mulai Proses Decode ZXing ke elemen video
-        codeReader.decodeFromVideoElement(videoRef.current, (result, error) => {
-          if (result) {
-            const textResult = result.getText().trim().toUpperCase();
-            setSerialNumber(textResult);
-            setIsScanning(false); // Otomatis trigger useEffect return untuk matiin kamera
+        // 2. Scan Loop Manual: 6 FPS (Setiap 150ms). Ini mencegah HP Hang / Layar Putih.
+        const scanFrame = async () => {
+          if (isScanned || !videoRef.current) return;
+
+          try {
+            // Proses decode frame saat ini
+            const result = await codeReader.decodeFromVideoElement(videoRef.current);
+            
+            if (result && !isScanned) {
+              isScanned = true;
+              
+              // EXTRA AMAN: Ekstrak teks tanpa memicu TypeError
+              const textResult = result.text || (typeof result.getText === 'function' ? result.getText() : '');
+              
+              if (textResult) {
+                setSerialNumber(textResult.trim().toUpperCase());
+                setIsScanning(false); // Otomatis menutup modal dan trigger cleanup
+                return; // Berhenti looping
+              } else {
+                isScanned = false;
+              }
+            }
+          } catch (err) {
+            // ZXing akan melempar error (NotFoundException) jika barcode belum terbaca di frame ini. 
+            // Kita abaikan secara diam-diam agar loop terus berjalan.
           }
-          // Error ZXing saat barcode belum pas akan di-spam ke sini, kita abaikan saja
-        });
+
+          // Lanjut ke frame berikutnya jika belum terbaca
+          if (!isScanned) {
+            timeoutId = setTimeout(scanFrame, 150);
+          }
+        };
+
+        // Mulai loop
+        scanFrame();
 
       } catch (err) {
-        console.error("Gagal inisialisasi scanner:", err);
+        console.error("Gagal inisialisasi kamera:", err);
         setError("Kamera gagal diakses. Pastikan izin kamera sudah diberikan.");
         setIsScanning(false);
       }
@@ -134,39 +163,39 @@ export default function Pemeriksaan() {
 
     startScanner();
 
-    // CLEANUP KETIKA SCANNER DITUTUP
+    // CLEANUP KETIKA MODAL DITUTUP
     return () => {
-      if (codeReader) {
-        codeReader.reset(); // Matikan worker ZXing
-      }
+      isScanned = true; // Hentikan loop aktif
+      if (timeoutId) clearTimeout(timeoutId);
+      
       if (localStream) {
-        localStream.getTracks().forEach(track => track.stop()); // Matikan lampu kamera fisik
+        localStream.getTracks().forEach(track => track.stop()); // Matikan lampu kamera
+      }
+      if (codeReader) {
+        codeReader.reset(); // Matikan internal engine ZXing
       }
       scannerTrackRef.current = null;
     };
   }, [isScanning]);
 
-  // FUNGSI SENTER AMAN (LANGSUNG TEMBAK KE TRACK NATIVE)
+  // FUNGSI SENTER
   const toggleTorch = async () => {
     try {
       const track = scannerTrackRef.current;
-
       if (!track) {
         alert("Kamera belum aktif secara sempurna. Tunggu sebentar.");
         return;
       }
 
       const nextState = !isTorchOn;
-
       await track.applyConstraints({
         advanced: [{ torch: nextState }]
       });
-
       setIsTorchOn(nextState);
 
     } catch (err) {
       console.error("Gagal menyalakan senter:", err);
-      alert("Gagal menyalakan senter. Perangkat atau Browser ini tidak mengizinkan akses ke Flashlight web.");
+      alert("Browser/Perangkat ini memblokir akses senter.");
     }
   };
   // ========================================================
@@ -283,12 +312,10 @@ export default function Pemeriksaan() {
             
             {/* AREA VIDEO KAMERA */}
             <div className="relative bg-black w-full h-[360px] flex items-center justify-center overflow-hidden shrink-0">
-              {/* VIDEO TAG UNTUK ZXING */}
               <video 
                 ref={videoRef}
                 className="w-full h-full object-cover" 
                 muted
-                autoPlay
                 playsInline
               />
               
