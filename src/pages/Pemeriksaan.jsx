@@ -1,12 +1,12 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../config/firebase';
 import { collection, addDoc, runTransaction, doc, query, where, getDocs, orderBy } from 'firebase/firestore';
 import { dbLocal } from '../db/offlineDB';
 import { fetchWithRetry } from '../utils/network';
 
-// ENGINE UTAMA MURNI 100% ZXING
-import { BrowserMultiFormatReader } from '@zxing/browser';
+// MENGGUNAKAN REACT-ZXING PERSIS SEPERTI TEMUANMU (SUPER AMAN & ANTI-BLANK)
+import { useZxing } from 'react-zxing';
 
 const DRIVE_API_URL = "https://script.google.com/macros/s/AKfycbyJwmBp6pfgIgO9jSOl-RbQ6RMBTQPUX0zJFd_3TYqQ-egca9WNOImoKrLYW6PkQUDBYQ/exec";
 
@@ -37,6 +37,111 @@ const compressImage = (file) => {
   });
 };
 
+// ========================================================
+// KOMPONEN KHUSUS SCANNER (MEMISAHKAN KAMERA AGAR TIDAK CRASH)
+// ========================================================
+function ScannerModal({ onScan, onClose }) {
+  const [isTorchOn, setIsTorchOn] = useState(false);
+  const [boxWidth, setBoxWidth] = useState(340);
+  const [boxHeight, setBoxHeight] = useState(140);
+
+  // MESIN ZXING YANG OTOMATIS MEMBERSIHKAN MEMORI
+  const { ref } = useZxing({
+    onDecodeResult(result) {
+      if (result) {
+        const text = result.getText ? result.getText() : result.text;
+        if (text) onScan(text);
+      }
+    },
+    // Cadangan untuk kompabilitas library yang lama
+    onResult(result) {
+      if (result) {
+        const text = result.getText ? result.getText() : result.text;
+        if (text) onScan(text);
+      }
+    }
+  });
+
+  // FUNGSI SENTER ASLI MILIKMU TANPA DIUTAK-ATIK
+  const toggleTorch = async () => {
+    try {
+      if (!ref.current || !ref.current.srcObject) {
+        alert("Kamera belum siap, tunggu sebentar.");
+        return;
+      }
+      const track = ref.current.srcObject.getVideoTracks()[0];
+      if (!track) return;
+      const nextState = !isTorchOn;
+      await track.applyConstraints({
+        advanced: [{ torch: nextState }]
+      });
+      setIsTorchOn(nextState);
+    } catch (err) {
+      alert("Senter gagal dinyalakan. HP/Browser ini mungkin memblokir akses senter via web.");
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-slate-900/95 z-[120] flex flex-col justify-center items-center backdrop-blur-md animate-in fade-in duration-300">
+      <div className="w-full max-w-md bg-white rounded-3xl overflow-hidden shadow-2xl m-4 flex flex-col animate-in zoom-in-95 duration-300">
+        <div className="p-4 bg-slate-800 flex justify-between items-center text-white shrink-0">
+          <div className="flex items-center gap-2">
+            <span className="text-xl">📷</span>
+            <h3 className="font-bold text-sm tracking-wide">Pindai Serial Number</h3>
+          </div>
+          <button onClick={onClose} className="text-slate-300 hover:text-white bg-slate-700 hover:bg-red-500 rounded-full w-8 h-8 flex items-center justify-center transition-colors font-bold">✕</button>
+        </div>
+        
+        <div className="relative bg-black w-full h-[360px] flex items-center justify-center overflow-hidden shrink-0">
+          <video ref={ref} className="w-full h-full object-cover" playsInline muted />
+          
+          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+            <div style={{ width: `${boxWidth}px`, height: `${boxHeight}px` }} className="border-2 border-[#34A853] relative shadow-[0_0_0_9999px_rgba(0,0,0,0.65)] transition-all duration-150">
+              <div className="absolute top-0 left-0 w-4 h-4 border-t-4 border-l-4 border-[#34A853] -mt-1 -ml-1"></div>
+              <div className="absolute top-0 right-0 w-4 h-4 border-t-4 border-r-4 border-[#34A853] -mt-1 -mr-1"></div>
+              <div className="absolute bottom-0 left-0 w-4 h-4 border-b-4 border-l-4 border-[#34A853] -mb-1 -ml-1"></div>
+              <div className="absolute bottom-0 right-0 w-4 h-4 border-b-4 border-r-4 border-[#34A853] -mb-1 -mr-1"></div>
+              <div className="absolute w-full h-0.5 bg-red-500/90 top-1/2 left-0 transform -translate-y-1/2 animate-pulse shadow-[0_0_8px_rgba(239,68,68,1)]"></div>
+            </div>
+          </div>
+        </div>
+
+        <div className="p-4 bg-slate-50 border-t border-slate-100 flex flex-col gap-3 shrink-0">
+          <div className="flex justify-between items-center text-xs font-bold text-slate-600">
+            <span>Sesuaikan Panduan Bidik:</span>
+            <button type="button" onClick={toggleTorch} className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border text-xs font-bold transition-all ${isTorchOn ? 'bg-amber-400 text-amber-900 border-amber-300 shadow-sm' : 'bg-slate-800 text-white border-transparent'}`}>
+              {isTorchOn ? '💡 Matikan Senter' : '🔦 Saklar Senter'}
+            </button>
+          </div>
+          
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex items-center justify-between bg-white p-2 rounded-xl border border-slate-200">
+              <span className="text-[11px] font-black text-slate-400 pl-1 uppercase">Lebar</span>
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={() => setBoxWidth(w => Math.max(160, w - 20))} className="w-8 h-8 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-lg font-black transition-colors">-</button>
+                <span className="font-mono text-xs font-black text-slate-700 w-12 text-center">{boxWidth}px</span>
+                <button type="button" onClick={() => setBoxWidth(w => Math.min(360, w + 20))} className="w-8 h-8 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-lg font-black transition-colors">+</button>
+              </div>
+            </div>
+            
+            <div className="flex items-center justify-between bg-white p-2 rounded-xl border border-slate-200">
+              <span className="text-[11px] font-black text-slate-400 pl-1 uppercase">Tinggi</span>
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={() => setBoxHeight(h => Math.max(40, h - 15))} className="w-8 h-8 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-lg font-black transition-colors">-</button>
+                <span className="font-mono text-xs font-black text-slate-700 w-12 text-center">{boxHeight}px</span>
+                <button type="button" onClick={() => setBoxHeight(h => Math.min(200, h + 15))} className="w-8 h-8 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-lg font-black transition-colors">+</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ========================================================
+// KOMPONEN UTAMA (HALAMAN PEMERIKSAAN)
+// ========================================================
 export default function Pemeriksaan() {
   const { user } = useAuth();
   
@@ -59,105 +164,8 @@ export default function Pemeriksaan() {
   const [isLaporanLoading, setIsLaporanLoading] = useState(false);
   const [searchLaporan, setSearchLaporan] = useState('');
 
-  // ========================================================
-  // STATE MESIN SCANNER ZXING ANTI-BLANK
-  // ========================================================
+  // SAKLAR MODAL KAMERA
   const [isScanning, setIsScanning] = useState(false);
-  const [isTorchOn, setIsTorchOn] = useState(false);
-  const [boxWidth, setBoxWidth] = useState(340);
-  const [boxHeight, setBoxHeight] = useState(140);
-  
-  const videoRef = useRef(null);
-
-  useEffect(() => {
-    let isMounted = true;
-    let localStream = null;
-    const codeReader = new BrowserMultiFormatReader();
-
-    const startScanner = async () => {
-      try {
-        setIsTorchOn(false);
-        
-        // Panggil hardware kamera belakang dengan resolusi ideal 720p
-        localStream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: "environment",
-            width: { ideal: 1280 },
-            height: { ideal: 720 }
-          }
-        });
-
-        if (!isMounted || !videoRef.current) {
-          if (localStream) localStream.getTracks().forEach(t => t.stop());
-          return;
-        }
-
-        videoRef.current.srcObject = localStream;
-        videoRef.current.setAttribute("playsinline", true);
-        await videoRef.current.play();
-
-        // Menggunakan teknik bawaan ZXing murni sekali baca (Lebih ringan & Anti-Crash)
-        const result = await codeReader.decodeOnceFromVideoElement(videoRef.current);
-        
-        if (result && isMounted) {
-          const cleanText = result.text.trim().toUpperCase();
-          setSerialNumber(cleanText);
-          setIsScanning(false); // Otomatis menutup scanner setelah sukses
-        }
-
-      } catch (err) {
-        // Abaikan log interupsi saat kamera ditutup paksa secara manual
-        console.log("Scanner stream closed safely.");
-      }
-    };
-
-    if (isScanning) {
-      startScanner();
-    }
-
-    // CLEANUP SIKLUS HIDUP KAMERA - 100% AMAN DARI LAYAR BLANK PUTIH
-    return () => {
-      isMounted = false;
-      if (localStream) {
-        localStream.getTracks().forEach(track => track.stop());
-      }
-      if (videoRef.current) {
-        videoRef.current.srcObject = null;
-      }
-    };
-  }, [isScanning]);
-
-  // ========================================================
-  // LOGIKA SENTER BARU JALUR LIVE TRACK (ANTI-MOGOK)
-  // ========================================================
-  const toggleTorch = async () => {
-    try {
-      if (!videoRef.current || !videoRef.current.srcObject) {
-        alert("Kamera belum aktif atau sedang memuat.");
-        return;
-      }
-
-      // Ambil track video yang benar-benar sedang berjalan di layar saat ini
-      const stream = videoRef.current.srcObject;
-      const track = stream.getVideoTracks()[0];
-      
-      if (!track) {
-        alert("Gagal menemukan jalur lensa kamera.");
-        return;
-      }
-
-      const nextState = !isTorchOn;
-      await track.applyConstraints({
-        advanced: [{ torch: nextState }]
-      });
-      setIsTorchOn(nextState);
-
-    } catch (err) {
-      console.error(err);
-      alert("Senter gagal merespon. Pastikan Anda menggunakan Google Chrome pada perangkat Android.");
-    }
-  };
-  // ========================================================
 
   useEffect(() => { return () => { photos.forEach(p => URL.revokeObjectURL(p.preview)); }; }, [photos]);
   useEffect(() => { if (activeTab === 'laporan') fetchLaporan(); }, [activeTab]);
@@ -250,74 +258,22 @@ export default function Pemeriksaan() {
     } catch (err) { console.error(err); setError(`Gagal mengirim data: ${err.message}`); setIsUploading(false); }
   };
 
+  const progressCount = uploadMode === 'kategori' ? KATEGORI_WAJIB.filter(kat => photos.some(p => p.kategori === kat)).length : photos.length;
+  const progressPercent = uploadMode === 'kategori' ? Math.round((progressCount / KATEGORI_WAJIB.length) * 100) : (photos.length > 0 ? 100 : 0);
+  const filteredLaporan = laporanRecords.filter(rec => rec.serialNumber?.toLowerCase().includes(searchLaporan.toLowerCase()) || rec.petugas?.toLowerCase().includes(searchLaporan.toLowerCase()));
+
   return (
     <div className="max-w-4xl mx-auto pb-24 font-sans relative select-none">
       
-      {/* MODAL SCANNER HYBRID ZXING */}
+      {/* PANGGIL KOMPONEN SCANNER AMAN KITA DI SINI */}
       {isScanning && (
-        <div className="fixed inset-0 bg-slate-900/95 z-[120] flex flex-col justify-center items-center backdrop-blur-md animate-in fade-in duration-300">
-          <div className="w-full max-w-md bg-white rounded-3xl overflow-hidden shadow-2xl m-4 flex flex-col animate-in zoom-in-95 duration-300">
-            <div className="p-4 bg-slate-800 flex justify-between items-center text-white shrink-0">
-              <div className="flex items-center gap-2">
-                <span className="text-xl">📷</span>
-                <h3 className="font-bold text-sm tracking-wide">Pindai Serial Number</h3>
-              </div>
-              <button onClick={() => setIsScanning(false)} className="text-slate-300 hover:text-white bg-slate-700 hover:bg-red-500 rounded-full w-8 h-8 flex items-center justify-center transition-colors font-bold">✕</button>
-            </div>
-            
-            {/* AREA VIDEO KAMERA */}
-            <div className="relative bg-black w-full h-[360px] flex items-center justify-center overflow-hidden shrink-0">
-              <video 
-                ref={videoRef}
-                className="w-full h-full object-cover" 
-                muted
-                playsInline
-              />
-              
-              {/* TARGET BOX OVERLAY (Visual Guide) */}
-              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                <div style={{ width: `${boxWidth}px`, height: `${boxHeight}px` }} className="border-2 border-[#34A853] relative shadow-[0_0_0_9999px_rgba(0,0,0,0.65)] transition-all duration-150">
-                  <div className="absolute top-0 left-0 w-4 h-4 border-t-4 border-l-4 border-[#34A853] -mt-1 -ml-1"></div>
-                  <div className="absolute top-0 right-0 w-4 h-4 border-t-4 border-r-4 border-[#34A853] -mt-1 -mr-1"></div>
-                  <div className="absolute bottom-0 left-0 w-4 h-4 border-b-4 border-l-4 border-[#34A853] -mb-1 -ml-1"></div>
-                  <div className="absolute bottom-0 right-0 w-4 h-4 border-b-4 border-r-4 border-[#34A853] -mb-1 -mr-1"></div>
-                  <div className="absolute w-full h-0.5 bg-red-500/90 top-1/2 left-0 transform -translate-y-1/2 animate-pulse shadow-[0_0_8px_rgba(239,68,68,1)]"></div>
-                </div>
-              </div>
-            </div>
-
-            {/* PANEL KONTROL UKURAN & SENTER */}
-            <div className="p-4 bg-slate-50 border-t border-slate-100 flex flex-col gap-3 shrink-0">
-              <div className="flex justify-between items-center text-xs font-bold text-slate-600">
-                <span>Sesuaikan Panduan Bidik:</span>
-                <button type="button" onClick={toggleTorch} className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border text-xs font-bold transition-all ${isTorchOn ? 'bg-amber-400 text-amber-900 border-amber-300 shadow-sm' : 'bg-slate-800 text-white border-transparent'}`}>
-                  {isTorchOn ? '💡 Senter Menyala' : '🔦 Saklar Senter'}
-                </button>
-              </div>
-              
-              <div className="grid grid-cols-2 gap-3">
-                <div className="flex items-center justify-between bg-white p-2 rounded-xl border border-slate-200">
-                  <span className="text-[11px] font-black text-slate-400 pl-1 uppercase">Lebar</span>
-                  <div className="flex items-center gap-2">
-                    <button type="button" onClick={() => setBoxWidth(w => Math.max(160, w - 20))} className="w-8 h-8 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-lg font-black transition-colors">-</button>
-                    <span className="font-mono text-xs font-black text-slate-700 w-12 text-center">{boxWidth}px</span>
-                    <button type="button" onClick={() => setBoxWidth(w => Math.min(360, w + 20))} className="w-8 h-8 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-lg font-black transition-colors">+</button>
-                  </div>
-                </div>
-                
-                <div className="flex items-center justify-between bg-white p-2 rounded-xl border border-slate-200">
-                  <span className="text-[11px] font-black text-slate-400 pl-1 uppercase">Tinggi</span>
-                  <div className="flex items-center gap-2">
-                    <button type="button" onClick={() => setBoxHeight(h => Math.max(40, h - 15))} className="w-8 h-8 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-lg font-black transition-colors">-</button>
-                    <span className="font-mono text-xs font-black text-slate-700 w-12 text-center">{boxHeight}px</span>
-                    <button type="button" onClick={() => setBoxHeight(h => Math.min(200, h + 15))} className="w-8 h-8 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-lg font-black transition-colors">+</button>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-          </div>
-        </div>
+        <ScannerModal 
+          onScan={(text) => {
+            setSerialNumber(text.trim().toUpperCase());
+            setIsScanning(false);
+          }}
+          onClose={() => setIsScanning(false)}
+        />
       )}
 
       {/* MODAL PILIHAN KAMERA/GALERI */}
