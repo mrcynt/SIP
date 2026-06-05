@@ -38,14 +38,14 @@ const compressImage = (file) => {
 };
 
 // ========================================================
-// KOMPONEN KHUSUS SCANNER (MEMISAHKAN KAMERA AGAR TIDAK CRASH)
+// KOMPONEN KHUSUS SCANNER (DI-UPGRADE JADI LEBIH JAGO)
 // ========================================================
 function ScannerModal({ onScan, onClose }) {
   const [isTorchOn, setIsTorchOn] = useState(false);
   const [boxWidth, setBoxWidth] = useState(340);
   const [boxHeight, setBoxHeight] = useState(140);
 
-  // MESIN ZXING YANG OTOMATIS MEMBERSIHKAN MEMORI
+  // MESIN ZXING YANG SUDAH DI-BOOST PERFORMANYA
   const { ref } = useZxing({
     onDecodeResult(result) {
       if (result) {
@@ -59,7 +59,17 @@ function ScannerModal({ onScan, onClose }) {
         const text = result.getText ? result.getText() : result.text;
         if (text) onScan(text);
       }
-    }
+    },
+    // 1. MEMAKSA KAMERA KE MODE HD (Biar garis tipis barcode Hisense terbaca tajam)
+    constraints: {
+      video: {
+        facingMode: "environment",
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+      }
+    },
+    // 2. MEMPERCEPAT WAKTU SCAN JADI SANGAT AGRESIF (Scan 10x per detik)
+    timeBetweenDecodingAttempts: 100
   });
 
   // FUNGSI SENTER ASLI MILIKMU TANPA DIUTAK-ATIK
@@ -103,6 +113,10 @@ function ScannerModal({ onScan, onClose }) {
               <div className="absolute bottom-0 right-0 w-4 h-4 border-b-4 border-r-4 border-[#34A853] -mb-1 -mr-1"></div>
               <div className="absolute w-full h-0.5 bg-red-500/90 top-1/2 left-0 transform -translate-y-1/2 animate-pulse shadow-[0_0_8px_rgba(239,68,68,1)]"></div>
             </div>
+            {/* Panduan Jarak agar Petugas tidak terlalu menempelkan kamera */}
+            <p className="text-white text-xs font-bold mt-8 bg-black/70 px-4 py-2 rounded-full tracking-wide text-center leading-relaxed backdrop-blur-sm border border-white/10">
+              Jauhkan layar 10-15cm dari kardus.
+            </p>
           </div>
         </div>
 
@@ -265,7 +279,7 @@ export default function Pemeriksaan() {
   return (
     <div className="max-w-4xl mx-auto pb-24 font-sans relative select-none">
       
-      {/* PANGGIL KOMPONEN SCANNER AMAN KITA DI SINI */}
+      {/* PANGGIL KOMPONEN SCANNER KITA DI SINI */}
       {isScanning && (
         <ScannerModal 
           onScan={(text) => {
