@@ -5,7 +5,7 @@ import { collection, addDoc, runTransaction, doc, query, where, getDocs, orderBy
 import { dbLocal } from '../db/offlineDB';
 import { fetchWithRetry } from '../utils/network';
 
-// IMPORT ZXING DAN OBAT KUATNYA (HINTS & FORMATS)
+// MENGGUNAKAN REACT-ZXING PERSIS SEPERTI TEMUANMU (SUPER AMAN & ANTI-BLANK)
 import { useZxing } from 'react-zxing';
 import { DecodeHintType, BarcodeFormat } from '@zxing/library';
 
@@ -39,18 +39,21 @@ const compressImage = (file) => {
 };
 
 // ========================================================
-// KOMPONEN KHUSUS SCANNER (DIPASANG MODE TRY_HARDER)
+// KOMPONEN KHUSUS SCANNER (DI-UPGRADE JADI SUPER TAJAM)
 // ========================================================
 function ScannerModal({ onScan, onClose }) {
   const [isTorchOn, setIsTorchOn] = useState(false);
   const [boxWidth, setBoxWidth] = useState(340);
   const [boxHeight, setBoxHeight] = useState(140);
 
-  // MEMBUAT "KACAMATA KUDA" AGAR ZXING FOKUS KE BARCODE GUDANG SAJA
+  // KACAMATA KUDA FULL: Memasukkan SEMUA jenis barcode industri
   const hints = new Map();
   const formats = [
-    BarcodeFormat.CODE_128, // Barcode panjang tipe Hisense
+    BarcodeFormat.CODE_128, 
     BarcodeFormat.CODE_39,
+    BarcodeFormat.CODE_93,
+    BarcodeFormat.ITF,
+    BarcodeFormat.CODABAR,
     BarcodeFormat.EAN_13,
     BarcodeFormat.EAN_8,
     BarcodeFormat.UPC_A,
@@ -58,11 +61,11 @@ function ScannerModal({ onScan, onClose }) {
     BarcodeFormat.QR_CODE
   ];
   hints.set(DecodeHintType.POSSIBLE_FORMATS, formats);
-  // PERINTAH SAKTI: Paksa ZXing untuk memindai lebih detail dan agresif
   hints.set(DecodeHintType.TRY_HARDER, true);
 
+  // MESIN ZXING SUPER CEPAT
   const { ref } = useZxing({
-    hints: hints, // Suntikkan obat kuatnya di sini!
+    hints: hints,
     onDecodeResult(result) {
       if (result) {
         const text = result.getText ? result.getText() : result.text;
@@ -78,11 +81,12 @@ function ScannerModal({ onScan, onClose }) {
     constraints: {
       video: {
         facingMode: "environment",
-        width: { ideal: 1280 }, // Tetap HD 720p
+        width: { ideal: 1280 }, 
         height: { ideal: 720 },
       }
     },
-    timeBetweenDecodingAttempts: 150 // Scan super cepat (6-7 kali per detik)
+    // DI-BOOST KEKUATANNYA: Cek gambar 20x per detik (50ms)
+    timeBetweenDecodingAttempts: 50 
   });
 
   // FUNGSI SENTER ASLI MILIKMU TANPA DIUTAK-ATIK
@@ -116,7 +120,8 @@ function ScannerModal({ onScan, onClose }) {
         </div>
         
         <div className="relative bg-black w-full h-[360px] flex items-center justify-center overflow-hidden shrink-0">
-          <video ref={ref} className="w-full h-full object-cover" playsInline muted />
+          {/* PERBAIKAN FATAL: object-contain memastikan ujung kiri-kanan barcode tidak terpotong kamera */}
+          <video ref={ref} className="w-full h-full object-contain" playsInline muted />
           
           <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
             <div style={{ width: `${boxWidth}px`, height: `${boxHeight}px` }} className="border-2 border-[#34A853] relative shadow-[0_0_0_9999px_rgba(0,0,0,0.65)] transition-all duration-150">
@@ -126,6 +131,9 @@ function ScannerModal({ onScan, onClose }) {
               <div className="absolute bottom-0 right-0 w-4 h-4 border-b-4 border-r-4 border-[#34A853] -mb-1 -mr-1"></div>
               <div className="absolute w-full h-0.5 bg-red-500/90 top-1/2 left-0 transform -translate-y-1/2 animate-pulse shadow-[0_0_8px_rgba(239,68,68,1)]"></div>
             </div>
+            <p className="text-white text-xs font-bold mt-8 bg-black/70 px-4 py-2 rounded-full tracking-wide text-center leading-relaxed backdrop-blur-sm border border-white/10">
+              Biarkan ruang kosong di ujung barcode.
+            </p>
           </div>
         </div>
 
