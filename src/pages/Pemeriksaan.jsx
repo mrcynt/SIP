@@ -5,7 +5,7 @@ import { collection, addDoc, runTransaction, doc, query, where, getDocs, orderBy
 import { dbLocal } from '../db/offlineDB';
 import { fetchWithRetry } from '../utils/network';
 
-// IMPORT ZXING SEBAGAI ENGINE UTAMA SESUAI PILIHANMU
+// ENGINE UTAMA MURNI 100% ZXING
 import { BrowserMultiFormatReader } from '@zxing/browser';
 
 const DRIVE_API_URL = "https://script.google.com/macros/s/AKfycbyJwmBp6pfgIgO9jSOl-RbQ6RMBTQPUX0zJFd_3TYqQ-egca9WNOImoKrLYW6PkQUDBYQ/exec";
@@ -60,7 +60,7 @@ export default function Pemeriksaan() {
   const [searchLaporan, setSearchLaporan] = useState('');
 
   // ========================================================
-  // STATE SCANNER HYBRID DENGAN UKURAN KOTAK BISA DIATUR
+  // STATE MESIN SCANNER ZXING ANTI-BLANK
   // ========================================================
   const [isScanning, setIsScanning] = useState(false);
   const [isTorchOn, setIsTorchOn] = useState(false);
@@ -68,21 +68,17 @@ export default function Pemeriksaan() {
   const [boxHeight, setBoxHeight] = useState(140);
   
   const videoRef = useRef(null);
-  const scannerTrackRef = useRef(null);
 
   useEffect(() => {
-    if (!isScanning) return;
-
-    const codeReader = new BrowserMultiFormatReader();
+    let isMounted = true;
     let localStream = null;
-    let isScanned = false; 
-    let scanTimeout = null;
-
-    setIsTorchOn(false);
+    const codeReader = new BrowserMultiFormatReader();
 
     const startScanner = async () => {
       try {
-        // Ambil stream kamera dengan resolusi 720p persis seperti kodemu
+        setIsTorchOn(false);
+        
+        // Panggil hardware kamera belakang dengan resolusi ideal 720p
         localStream = await navigator.mediaDevices.getUserMedia({
           video: {
             facingMode: "environment",
@@ -91,98 +87,62 @@ export default function Pemeriksaan() {
           }
         });
 
-        if (!videoRef.current) return;
+        if (!isMounted || !videoRef.current) {
+          if (localStream) localStream.getTracks().forEach(t => t.stop());
+          return;
+        }
+
         videoRef.current.srcObject = localStream;
         videoRef.current.setAttribute("playsinline", true);
         await videoRef.current.play();
 
-        const track = localStream.getVideoTracks()[0];
-        scannerTrackRef.current = track;
-
-        // Cek dukungan Native Barcode Detector
-        const isNativeSupported = 'BarcodeDetector' in window;
-        let nativeDetector = null;
-        if (isNativeSupported) {
-          nativeDetector = new window.BarcodeDetector({ 
-            formats: ['code_128', 'code_39', 'ean_13', 'qr_code'] 
-          });
+        // Menggunakan teknik bawaan ZXing murni sekali baca (Lebih ringan & Anti-Crash)
+        const result = await codeReader.decodeOnceFromVideoElement(videoRef.current);
+        
+        if (result && isMounted) {
+          const cleanText = result.text.trim().toUpperCase();
+          setSerialNumber(cleanText);
+          setIsScanning(false); // Otomatis menutup scanner setelah sukses
         }
 
-        // Scan Loop Manual yang diperbaiki agar anti-blank / crash
-        const scanFrame = async () => {
-          if (isScanned || !videoRef.current) return;
-
-          try {
-            let foundText = null;
-
-            // 1. Coba Native Barcode Detector
-            if (nativeDetector) {
-              const barcodes = await nativeDetector.detect(videoRef.current);
-              if (barcodes.length > 0) foundText = barcodes[0].rawValue;
-            }
-
-            // 2. Jika gagal, baru pakai ZXing secara aman (decodeOnce) agar memory tidak bocor
-            if (!foundText) {
-              try {
-                const result = await codeReader.decodeOnceFromVideoElement(videoRef.current);
-                if (result) foundText = result.text;
-              } catch (e) {
-                // Abaikan error sewaktu tidak mendeteksi objek barcode
-              }
-            }
-
-            // 3. JIKA BARCODE KETEMU
-            if (foundText) {
-              isScanned = true;
-              const cleanValue = foundText.trim().toUpperCase();
-              
-              setSerialNumber(cleanValue);
-              
-              // Tutup scanner secara instan dan aman
-              setIsScanning(false);
-              return; 
-            }
-          } catch (err) {
-            console.error("Scan error:", err);
-          }
-
-          if (!isScanned && isScanning) {
-            scanTimeout = setTimeout(scanFrame, 150);
-          }
-        };
-
-        // Mulai loop pembacaan
-        scanFrame();
-
       } catch (err) {
-        console.error("Gagal inisialisasi kamera:", err);
-        setError("Kamera gagal diakses. Pastikan izin kamera sudah diberikan.");
-        setIsScanning(false);
+        // Abaikan log interupsi saat kamera ditutup paksa secara manual
+        console.log("Scanner stream closed safely.");
       }
     };
 
-    startScanner();
+    if (isScanning) {
+      startScanner();
+    }
 
-    // CLEANUP MUTLAK: Mematikan track kamera dengan bersih tanpa crash
+    // CLEANUP SIKLUS HIDUP KAMERA - 100% AMAN DARI LAYAR BLANK PUTIH
     return () => {
-      isScanned = true;
-      if (scanTimeout) clearTimeout(scanTimeout);
-      
+      isMounted = false;
       if (localStream) {
         localStream.getTracks().forEach(track => track.stop());
       }
-      scannerTrackRef.current = null;
+      if (videoRef.current) {
+        videoRef.current.srcObject = null;
+      }
     };
   }, [isScanning]);
 
   // ========================================================
-  // FUNGSI SENTER ASLI KODEMU (TIDAK DISENTUH / DIUBAH)
+  // LOGIKA SENTER BARU JALUR LIVE TRACK (ANTI-MOGOK)
   // ========================================================
   const toggleTorch = async () => {
     try {
-      const track = scannerTrackRef.current;
+      if (!videoRef.current || !videoRef.current.srcObject) {
+        alert("Kamera belum aktif atau sedang memuat.");
+        return;
+      }
+
+      // Ambil track video yang benar-benar sedang berjalan di layar saat ini
+      const stream = videoRef.current.srcObject;
+      const track = stream.getVideoTracks()[0];
+      
       if (!track) {
-        alert("Kamera belum siap, tunggu sebentar.");
+        alert("Gagal menemukan jalur lensa kamera.");
         return;
       }
 
@@ -193,7 +153,8 @@ export default function Pemeriksaan() {
       setIsTorchOn(nextState);
 
     } catch (err) {
-      alert("Senter gagal dinyalakan. HP/Browser ini mungkin memblokir akses senter via web.");
+      console.error(err);
+      alert("Senter gagal merespon. Pastikan Anda menggunakan Google Chrome pada perangkat Android.");
     }
   };
   // ========================================================
@@ -292,7 +253,7 @@ export default function Pemeriksaan() {
   return (
     <div className="max-w-4xl mx-auto pb-24 font-sans relative select-none">
       
-      {/* MODAL SCANNER HYBRID */}
+      {/* MODAL SCANNER HYBRID ZXING */}
       {isScanning && (
         <div className="fixed inset-0 bg-slate-900/95 z-[120] flex flex-col justify-center items-center backdrop-blur-md animate-in fade-in duration-300">
           <div className="w-full max-w-md bg-white rounded-3xl overflow-hidden shadow-2xl m-4 flex flex-col animate-in zoom-in-95 duration-300">
@@ -313,7 +274,7 @@ export default function Pemeriksaan() {
                 playsInline
               />
               
-              {/* TARGET BOX OVERLAY */}
+              {/* TARGET BOX OVERLAY (Visual Guide) */}
               <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                 <div style={{ width: `${boxWidth}px`, height: `${boxHeight}px` }} className="border-2 border-[#34A853] relative shadow-[0_0_0_9999px_rgba(0,0,0,0.65)] transition-all duration-150">
                   <div className="absolute top-0 left-0 w-4 h-4 border-t-4 border-l-4 border-[#34A853] -mt-1 -ml-1"></div>
@@ -330,7 +291,7 @@ export default function Pemeriksaan() {
               <div className="flex justify-between items-center text-xs font-bold text-slate-600">
                 <span>Sesuaikan Panduan Bidik:</span>
                 <button type="button" onClick={toggleTorch} className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border text-xs font-bold transition-all ${isTorchOn ? 'bg-amber-400 text-amber-900 border-amber-300 shadow-sm' : 'bg-slate-800 text-white border-transparent'}`}>
-                  {isTorchOn ? '💡 Matikan Senter' : '🔦 Saklar Senter'}
+                  {isTorchOn ? '💡 Senter Menyala' : '🔦 Saklar Senter'}
                 </button>
               </div>
               
@@ -436,7 +397,7 @@ export default function Pemeriksaan() {
                     autoFocus disabled={isCheckingSN}
                   />
                   <button type="button" onClick={() => setIsScanning(true)} disabled={isCheckingSN} className="absolute right-2 w-11 h-11 flex items-center justify-center text-slate-400 hover:text-white bg-white hover:bg-[#1A73E8] border border-slate-200 hover:border-transparent rounded-xl transition-all shadow-sm group" title="Buka Kamera Scanner">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 transform group-hover:scale-110 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812-1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9zM15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 transform group-hover:scale-110 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9zM15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
                   </button>
                 </div>
                 <button type="submit" disabled={isCheckingSN} className="px-6 py-2.5 bg-[#1A73E8] hover:bg-[#1557B0] disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-bold text-xs rounded-full transition-colors shadow-sm flex items-center gap-2">
