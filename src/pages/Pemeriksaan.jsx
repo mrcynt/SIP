@@ -5,8 +5,9 @@ import { collection, addDoc, runTransaction, doc, query, where, getDocs, orderBy
 import { dbLocal } from '../db/offlineDB';
 import { fetchWithRetry } from '../utils/network';
 
-// MENGGUNAKAN REACT-ZXING PERSIS SEPERTI TEMUANMU (SUPER AMAN & ANTI-BLANK)
+// IMPORT ZXING DAN OBAT KUATNYA (HINTS & FORMATS)
 import { useZxing } from 'react-zxing';
+import { DecodeHintType, BarcodeFormat } from '@zxing/library';
 
 const DRIVE_API_URL = "https://script.google.com/macros/s/AKfycbyJwmBp6pfgIgO9jSOl-RbQ6RMBTQPUX0zJFd_3TYqQ-egca9WNOImoKrLYW6PkQUDBYQ/exec";
 
@@ -38,38 +39,50 @@ const compressImage = (file) => {
 };
 
 // ========================================================
-// KOMPONEN KHUSUS SCANNER (DI-UPGRADE JADI LEBIH JAGO)
+// KOMPONEN KHUSUS SCANNER (DIPASANG MODE TRY_HARDER)
 // ========================================================
 function ScannerModal({ onScan, onClose }) {
   const [isTorchOn, setIsTorchOn] = useState(false);
   const [boxWidth, setBoxWidth] = useState(340);
   const [boxHeight, setBoxHeight] = useState(140);
 
-  // MESIN ZXING YANG SUDAH DI-BOOST PERFORMANYA
+  // MEMBUAT "KACAMATA KUDA" AGAR ZXING FOKUS KE BARCODE GUDANG SAJA
+  const hints = new Map();
+  const formats = [
+    BarcodeFormat.CODE_128, // Barcode panjang tipe Hisense
+    BarcodeFormat.CODE_39,
+    BarcodeFormat.EAN_13,
+    BarcodeFormat.EAN_8,
+    BarcodeFormat.UPC_A,
+    BarcodeFormat.UPC_E,
+    BarcodeFormat.QR_CODE
+  ];
+  hints.set(DecodeHintType.POSSIBLE_FORMATS, formats);
+  // PERINTAH SAKTI: Paksa ZXing untuk memindai lebih detail dan agresif
+  hints.set(DecodeHintType.TRY_HARDER, true);
+
   const { ref } = useZxing({
+    hints: hints, // Suntikkan obat kuatnya di sini!
     onDecodeResult(result) {
       if (result) {
         const text = result.getText ? result.getText() : result.text;
         if (text) onScan(text);
       }
     },
-    // Cadangan untuk kompabilitas library yang lama
     onResult(result) {
       if (result) {
         const text = result.getText ? result.getText() : result.text;
         if (text) onScan(text);
       }
     },
-    // 1. MEMAKSA KAMERA KE MODE HD (Biar garis tipis barcode Hisense terbaca tajam)
     constraints: {
       video: {
         facingMode: "environment",
-        width: { ideal: 1280 },
+        width: { ideal: 1280 }, // Tetap HD 720p
         height: { ideal: 720 },
       }
     },
-    // 2. MEMPERCEPAT WAKTU SCAN JADI SANGAT AGRESIF (Scan 10x per detik)
-    timeBetweenDecodingAttempts: 100
+    timeBetweenDecodingAttempts: 150 // Scan super cepat (6-7 kali per detik)
   });
 
   // FUNGSI SENTER ASLI MILIKMU TANPA DIUTAK-ATIK
@@ -113,10 +126,6 @@ function ScannerModal({ onScan, onClose }) {
               <div className="absolute bottom-0 right-0 w-4 h-4 border-b-4 border-r-4 border-[#34A853] -mb-1 -mr-1"></div>
               <div className="absolute w-full h-0.5 bg-red-500/90 top-1/2 left-0 transform -translate-y-1/2 animate-pulse shadow-[0_0_8px_rgba(239,68,68,1)]"></div>
             </div>
-            {/* Panduan Jarak agar Petugas tidak terlalu menempelkan kamera */}
-            <p className="text-white text-xs font-bold mt-8 bg-black/70 px-4 py-2 rounded-full tracking-wide text-center leading-relaxed backdrop-blur-sm border border-white/10">
-              Jauhkan layar 10-15cm dari kardus.
-            </p>
           </div>
         </div>
 
@@ -168,7 +177,6 @@ export default function Pemeriksaan() {
   
   const [uploadMode, setUploadMode] = useState('kategori'); 
   const [photos, setPhotos] = useState([]); 
-  
   const [mediaSheet, setMediaSheet] = useState({ isOpen: false, kategori: null });
   
   const [isUploading, setIsUploading] = useState(false);
