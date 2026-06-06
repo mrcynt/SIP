@@ -1,13 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../config/firebase';
 import { collection, addDoc, runTransaction, doc, query, where, getDocs, orderBy } from 'firebase/firestore';
 import { dbLocal } from '../db/offlineDB';
 import { fetchWithRetry } from '../utils/network';
-
-// MENGGUNAKAN REACT-ZXING PERSIS SEPERTI TEMUANMU (SUPER AMAN & ANTI-BLANK)
-import { useZxing } from 'react-zxing';
-import { DecodeHintType, BarcodeFormat } from '@zxing/library';
 
 const DRIVE_API_URL = "https://script.google.com/macros/s/AKfycbyJwmBp6pfgIgO9jSOl-RbQ6RMBTQPUX0zJFd_3TYqQ-egca9WNOImoKrLYW6PkQUDBYQ/exec";
 
@@ -39,64 +35,97 @@ const compressImage = (file) => {
 };
 
 // ========================================================
-// KOMPONEN KHUSUS SCANNER (DI-UPGRADE JADI SUPER TAJAM)
+// KOMPONEN SCANNER MUTAKHIR (NATIVE GOOGLE ML-KIT API)
 // ========================================================
 function ScannerModal({ onScan, onClose }) {
   const [isTorchOn, setIsTorchOn] = useState(false);
   const [boxWidth, setBoxWidth] = useState(340);
   const [boxHeight, setBoxHeight] = useState(140);
+  const [errorMsg, setErrorMsg] = useState('');
+  
+  const videoRef = useRef(null);
+  const streamRef = useRef(null);
+  const intervalRef = useRef(null);
 
-  // KACAMATA KUDA FULL: Memasukkan SEMUA jenis barcode industri
-  const hints = new Map();
-  const formats = [
-    BarcodeFormat.CODE_128, 
-    BarcodeFormat.CODE_39,
-    BarcodeFormat.CODE_93,
-    BarcodeFormat.ITF,
-    BarcodeFormat.CODABAR,
-    BarcodeFormat.EAN_13,
-    BarcodeFormat.EAN_8,
-    BarcodeFormat.UPC_A,
-    BarcodeFormat.UPC_E,
-    BarcodeFormat.QR_CODE
-  ];
-  hints.set(DecodeHintType.POSSIBLE_FORMATS, formats);
-  hints.set(DecodeHintType.TRY_HARDER, true);
+  useEffect(() => {
+    let isMounted = true;
 
-  // MESIN ZXING SUPER CEPAT
-  const { ref } = useZxing({
-    hints: hints,
-    onDecodeResult(result) {
-      if (result) {
-        const text = result.getText ? result.getText() : result.text;
-        if (text) onScan(text);
+    const startNativeScanner = async () => {
+      try {
+        // Cek dukungan teknologi mutakhir di HP
+        if (!('BarcodeDetector' in window)) {
+          setErrorMsg("HP atau Browser Anda belum mendukung Native Barcode Scanner (Gunakan Google Chrome Android terbaru).");
+          return;
+        }
+
+        // Buka Kamera dengan resolusi tajam
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: "environment",
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+            focusMode: "continuous"
+          }
+        });
+
+        if (!isMounted || !videoRef.current) {
+          stream.getTracks().forEach(t => t.stop());
+          return;
+        }
+
+        streamRef.current = stream;
+        videoRef.current.srcObject = stream;
+        videoRef.current.setAttribute("playsinline", true);
+        await videoRef.current.play();
+
+        // Inisialisasi Google Machine Learning Barcode Detector
+        const barcodeDetector = new window.BarcodeDetector({
+          formats: ['code_128', 'code_39', 'code_93', 'ean_13', 'ean_8', 'itf', 'qr_code', 'upc_a', 'upc_e']
+        });
+
+        // Looping pemindaian super ringan 10x per detik (100ms)
+        intervalRef.current = setInterval(async () => {
+          if (videoRef.current && videoRef.current.readyState === videoRef.current.HAVE_ENOUGH_DATA) {
+            try {
+              const barcodes = await barcodeDetector.detect(videoRef.current);
+              if (barcodes.length > 0 && isMounted) {
+                // Barcode tertangkap oleh AI!
+                const text = barcodes[0].rawValue.trim().toUpperCase();
+                clearInterval(intervalRef.current); // Hentikan scan agar tidak dobel
+                onScan(text);
+              }
+            } catch (e) {
+              // Abaikan frame yang tidak memiliki barcode
+            }
+          }
+        }, 100);
+
+      } catch (err) {
+        console.error(err);
+        if (isMounted) setErrorMsg("Gagal mengakses kamera. Pastikan izin kamera aktif.");
       }
-    },
-    onResult(result) {
-      if (result) {
-        const text = result.getText ? result.getText() : result.text;
-        if (text) onScan(text);
+    };
+
+    startNativeScanner();
+
+    // CLEANUP AMAN SAAT DITUTUP
+    return () => {
+      isMounted = false;
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
       }
-    },
-    constraints: {
-      video: {
-        facingMode: "environment",
-        width: { ideal: 1280 }, 
-        height: { ideal: 720 },
-      }
-    },
-    // DI-BOOST KEKUATANNYA: Cek gambar 20x per detik (50ms)
-    timeBetweenDecodingAttempts: 50 
-  });
+    };
+  }, [onScan]);
 
   // FUNGSI SENTER ASLI MILIKMU TANPA DIUTAK-ATIK
   const toggleTorch = async () => {
     try {
-      if (!ref.current || !ref.current.srcObject) {
+      if (!streamRef.current) {
         alert("Kamera belum siap, tunggu sebentar.");
         return;
       }
-      const track = ref.current.srcObject.getVideoTracks()[0];
+      const track = streamRef.current.getVideoTracks()[0];
       if (!track) return;
       const nextState = !isTorchOn;
       await track.applyConstraints({
@@ -120,27 +149,32 @@ function ScannerModal({ onScan, onClose }) {
         </div>
         
         <div className="relative bg-black w-full h-[360px] flex items-center justify-center overflow-hidden shrink-0">
-          {/* PERBAIKAN FATAL: object-contain memastikan ujung kiri-kanan barcode tidak terpotong kamera */}
-          <video ref={ref} className="w-full h-full object-contain" playsInline muted />
+          {errorMsg ? (
+            <div className="p-6 text-center text-red-400 font-bold">{errorMsg}</div>
+          ) : (
+            <video ref={videoRef} className="w-full h-full object-contain" playsInline muted />
+          )}
           
-          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-            <div style={{ width: `${boxWidth}px`, height: `${boxHeight}px` }} className="border-2 border-[#34A853] relative shadow-[0_0_0_9999px_rgba(0,0,0,0.65)] transition-all duration-150">
-              <div className="absolute top-0 left-0 w-4 h-4 border-t-4 border-l-4 border-[#34A853] -mt-1 -ml-1"></div>
-              <div className="absolute top-0 right-0 w-4 h-4 border-t-4 border-r-4 border-[#34A853] -mt-1 -mr-1"></div>
-              <div className="absolute bottom-0 left-0 w-4 h-4 border-b-4 border-l-4 border-[#34A853] -mb-1 -ml-1"></div>
-              <div className="absolute bottom-0 right-0 w-4 h-4 border-b-4 border-r-4 border-[#34A853] -mb-1 -mr-1"></div>
-              <div className="absolute w-full h-0.5 bg-red-500/90 top-1/2 left-0 transform -translate-y-1/2 animate-pulse shadow-[0_0_8px_rgba(239,68,68,1)]"></div>
+          {!errorMsg && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+              <div style={{ width: `${boxWidth}px`, height: `${boxHeight}px` }} className="border-2 border-[#34A853] relative shadow-[0_0_0_9999px_rgba(0,0,0,0.65)] transition-all duration-150">
+                <div className="absolute top-0 left-0 w-4 h-4 border-t-4 border-l-4 border-[#34A853] -mt-1 -ml-1"></div>
+                <div className="absolute top-0 right-0 w-4 h-4 border-t-4 border-r-4 border-[#34A853] -mt-1 -mr-1"></div>
+                <div className="absolute bottom-0 left-0 w-4 h-4 border-b-4 border-l-4 border-[#34A853] -mb-1 -ml-1"></div>
+                <div className="absolute bottom-0 right-0 w-4 h-4 border-b-4 border-r-4 border-[#34A853] -mb-1 -mr-1"></div>
+                <div className="absolute w-full h-0.5 bg-red-500/90 top-1/2 left-0 transform -translate-y-1/2 animate-pulse shadow-[0_0_8px_rgba(239,68,68,1)]"></div>
+              </div>
+              <p className="text-white text-xs font-bold mt-8 bg-black/70 px-4 py-2 rounded-full tracking-wide text-center leading-relaxed backdrop-blur-sm border border-white/10">
+                Teknologi AI Aktif. Jauhkan layar 10-15cm.
+              </p>
             </div>
-            <p className="text-white text-xs font-bold mt-8 bg-black/70 px-4 py-2 rounded-full tracking-wide text-center leading-relaxed backdrop-blur-sm border border-white/10">
-              Biarkan ruang kosong di ujung barcode.
-            </p>
-          </div>
+          )}
         </div>
 
         <div className="p-4 bg-slate-50 border-t border-slate-100 flex flex-col gap-3 shrink-0">
           <div className="flex justify-between items-center text-xs font-bold text-slate-600">
             <span>Sesuaikan Panduan Bidik:</span>
-            <button type="button" onClick={toggleTorch} className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border text-xs font-bold transition-all ${isTorchOn ? 'bg-amber-400 text-amber-900 border-amber-300 shadow-sm' : 'bg-slate-800 text-white border-transparent'}`}>
+            <button type="button" onClick={toggleTorch} disabled={!!errorMsg} className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border text-xs font-bold transition-all ${isTorchOn ? 'bg-amber-400 text-amber-900 border-amber-300 shadow-sm' : 'bg-slate-800 text-white border-transparent disabled:opacity-50'}`}>
               {isTorchOn ? '💡 Matikan Senter' : '🔦 Saklar Senter'}
             </button>
           </div>
@@ -295,11 +329,11 @@ export default function Pemeriksaan() {
   return (
     <div className="max-w-4xl mx-auto pb-24 font-sans relative select-none">
       
-      {/* PANGGIL KOMPONEN SCANNER KITA DI SINI */}
+      {/* PANGGIL KOMPONEN SCANNER MUTAKHIR KITA DI SINI */}
       {isScanning && (
         <ScannerModal 
           onScan={(text) => {
-            setSerialNumber(text.trim().toUpperCase());
+            setSerialNumber(text);
             setIsScanning(false);
           }}
           onClose={() => setIsScanning(false)}
