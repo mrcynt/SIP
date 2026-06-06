@@ -5,8 +5,8 @@ import { collection, addDoc, runTransaction, doc, query, where, getDocs, orderBy
 import { dbLocal } from '../db/offlineDB';
 import { fetchWithRetry } from '../utils/network';
 
-// KITA KEMBALI KE HTML5-QRCODE (Mesin paling stabil & anti-blank!)
-import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode'; 
+// KITA PAKAI HTML5-QRCODE DENGAN FITUR RAHASIA AI AKTIF!
+import { Html5Qrcode } from 'html5-qrcode'; 
 
 const DRIVE_API_URL = "https://script.google.com/macros/s/AKfycbyJwmBp6pfgIgO9jSOl-RbQ6RMBTQPUX0zJFd_3TYqQ-egca9WNOImoKrLYW6PkQUDBYQ/exec";
 
@@ -38,20 +38,22 @@ const compressImage = (file) => {
 };
 
 // ========================================================
-// KOMPONEN KHUSUS SCANNER (ANTI BLACK SCREEN & JAGO 1D)
+// KOMPONEN KHUSUS SCANNER (MODE AI GOOGLE ML-KIT AKTIF)
 // ========================================================
 function ScannerModal({ onScan, onClose }) {
   const [isTorchOn, setIsTorchOn] = useState(false);
-  
-  // Ukuran kotak sekarang murni HANYA visual CSS, tidak mengganggu kamera!
   const [boxWidth, setBoxWidth] = useState(340);
   const [boxHeight, setBoxHeight] = useState(140);
-  
   const scannerRef = useRef(null);
 
   useEffect(() => {
-    // Inisialisasi engine pada div dengan id="reader"
-    const html5QrCode = new Html5Qrcode("reader");
+    // 🪄 INI DIA KUNCI RAHASIANYA! Membangunkan AI bawaan Android Chrome
+    const html5QrCode = new Html5Qrcode("reader", {
+      experimentalFeatures: {
+        useBarCodeDetectorIfSupported: true // Menggunakan Native API yang super tajam!
+      }
+    });
+    
     scannerRef.current = html5QrCode;
     let isMounted = true;
 
@@ -60,57 +62,50 @@ function ScannerModal({ onScan, onClose }) {
         await html5QrCode.start(
           { facingMode: "environment" }, 
           { 
-            fps: 15,
-            // qrbox SENGAJA DIHILANGKAN agar mesin membaca full screen dan tidak perlu restart saat ukuran kotak diubah
-            disableFlip: false,
-            // FOKUSKAN OTAKNYA HANYA KE BARCODE GUDANG (Hisense dkk)
-            formatsToSupport: [
-              Html5QrcodeSupportedFormats.CODE_128,
-              Html5QrcodeSupportedFormats.CODE_39,
-              Html5QrcodeSupportedFormats.EAN_13,
-              Html5QrcodeSupportedFormats.EAN_8,
-              Html5QrcodeSupportedFormats.QR_CODE
-            ]
+            fps: 15, // Cek gambar 15x per detik
+            videoConstraints: {
+              width: { ideal: 1280 }, // Memaksa lensa merender HD ke mesin
+              height: { ideal: 720 },
+              focusMode: "continuous"
+            }
           },
           (decodedText) => {
             if (isMounted) {
               isMounted = false;
+              // Mainkan bunyi 'beep' opsional jika mau, atau langsung close
               onScan(decodedText.toUpperCase());
             }
           },
           (errorMessage) => {
-            // Abaikan error loop background
+            // Error "not found" diabaikan agar console tidak berisik
           }
         );
 
-        // Setelah sukses menyala, nyalakan Auto-Focus Continuos
         if (isMounted) {
           const track = html5QrCode.getRunningTrack();
           if (track) {
-            track.applyConstraints({ advanced: [{ focusMode: "continuous" }] })
-                 .catch(() => console.log("Auto-focus berjalan mode standar"));
+            track.applyConstraints({ advanced: [{ focusMode: "continuous" }] }).catch(() => {});
           }
         }
       } catch (err) {
-        console.error("Gagal kamera:", err);
+        console.error("Gagal membuka kamera:", err);
       }
     };
 
     startScanner();
 
-    // CLEANUP YANG AMAN UNTUK MENCEGAH KAMERA MENGGANTUNG
     return () => {
       isMounted = false;
       if (html5QrCode.isScanning) {
         html5QrCode.stop().then(() => html5QrCode.clear()).catch(console.error);
       }
     };
-  }, []); // <-- Dependencies KOSONG! Kamera nyala sekali, tidak akan restart gara-gara kotak diubah.
+  }, [onScan]); 
 
-  // FUNGSI SENTER AMAN VIA HTML5-QRCODE
+  // FUNGSI SENTER AMAN (100% Tidak Disentuh)
   const toggleTorch = async () => {
     try {
-      if (scannerRef.current && scannerRef.current.getState() === 2) { // 2 = SCANNING
+      if (scannerRef.current && scannerRef.current.getState() === 2) { 
         const nextState = !isTorchOn;
         await scannerRef.current.applyVideoConstraints({
           advanced: [{ torch: nextState }]
@@ -134,10 +129,8 @@ function ScannerModal({ onScan, onClose }) {
         </div>
         
         <div className="relative bg-black w-full h-[360px] flex items-center justify-center overflow-hidden shrink-0">
-          {/* DIV READER UNTUK HTML5-QRCODE */}
           <div id="reader" className="w-full h-full object-cover"></div>
           
-          {/* TARGET BOX VISUAL (MURNI CSS, Tidak bikin kamera item!) */}
           <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10">
             <div style={{ width: `${boxWidth}px`, height: `${boxHeight}px` }} className="border-2 border-[#34A853] relative shadow-[0_0_0_9999px_rgba(0,0,0,0.65)] transition-all duration-150">
               <div className="absolute top-0 left-0 w-4 h-4 border-t-4 border-l-4 border-[#34A853] -mt-1 -ml-1"></div>
@@ -146,15 +139,15 @@ function ScannerModal({ onScan, onClose }) {
               <div className="absolute bottom-0 right-0 w-4 h-4 border-b-4 border-r-4 border-[#34A853] -mb-1 -mr-1"></div>
               <div className="absolute w-full h-0.5 bg-red-500/90 top-1/2 left-0 transform -translate-y-1/2 animate-pulse shadow-[0_0_8px_rgba(239,68,68,1)]"></div>
             </div>
-            <p className="text-white text-xs font-bold mt-8 bg-black/70 px-4 py-2 rounded-full tracking-wide text-center leading-relaxed backdrop-blur-sm border border-white/10">
-              Jauhkan layar 10-15cm. Sensor membaca area di sekitar garis merah.
+            <p className="text-white text-[10px] font-bold mt-8 bg-black/70 px-4 py-2 rounded-full tracking-wide text-center leading-relaxed backdrop-blur-sm border border-white/10">
+              Fitur AI Cerdas Aktif. <br />Jauhkan layar sedikit agar barcode fokus.
             </p>
           </div>
         </div>
 
         <div className="p-4 bg-slate-50 border-t border-slate-100 flex flex-col gap-3 shrink-0">
           <div className="flex justify-between items-center text-xs font-bold text-slate-600">
-            <span>Sesuaikan Panduan Bidik:</span>
+            <span>Sesuaikan Area (Visual):</span>
             <button type="button" onClick={toggleTorch} className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border text-xs font-bold transition-all ${isTorchOn ? 'bg-amber-400 text-amber-900 border-amber-300 shadow-sm' : 'bg-slate-800 text-white border-transparent'}`}>
               {isTorchOn ? '💡 Matikan Senter' : '🔦 Saklar Senter'}
             </button>
@@ -165,16 +158,15 @@ function ScannerModal({ onScan, onClose }) {
               <span className="text-[11px] font-black text-slate-400 pl-1 uppercase">Lebar</span>
               <div className="flex items-center gap-2">
                 <button type="button" onClick={() => setBoxWidth(w => Math.max(160, w - 20))} className="w-8 h-8 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-lg font-black transition-colors">-</button>
-                <span className="font-mono text-xs font-black text-slate-700 w-12 text-center">{boxWidth}px</span>
+                <span className="font-mono text-xs font-black text-slate-700 w-12 text-center">{boxWidth}</span>
                 <button type="button" onClick={() => setBoxWidth(w => Math.min(360, w + 20))} className="w-8 h-8 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-lg font-black transition-colors">+</button>
               </div>
             </div>
-            
             <div className="flex items-center justify-between bg-white p-2 rounded-xl border border-slate-200">
               <span className="text-[11px] font-black text-slate-400 pl-1 uppercase">Tinggi</span>
               <div className="flex items-center gap-2">
                 <button type="button" onClick={() => setBoxHeight(h => Math.max(40, h - 15))} className="w-8 h-8 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-lg font-black transition-colors">-</button>
-                <span className="font-mono text-xs font-black text-slate-700 w-12 text-center">{boxHeight}px</span>
+                <span className="font-mono text-xs font-black text-slate-700 w-12 text-center">{boxHeight}</span>
                 <button type="button" onClick={() => setBoxHeight(h => Math.min(200, h + 15))} className="w-8 h-8 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-lg font-black transition-colors">+</button>
               </div>
             </div>
@@ -186,7 +178,7 @@ function ScannerModal({ onScan, onClose }) {
 }
 
 // ========================================================
-// KOMPONEN UTAMA (HALAMAN PEMERIKSAAN)
+// KOMPONEN UTAMA
 // ========================================================
 export default function Pemeriksaan() {
   const { user } = useAuth();
@@ -209,7 +201,6 @@ export default function Pemeriksaan() {
   const [isLaporanLoading, setIsLaporanLoading] = useState(false);
   const [searchLaporan, setSearchLaporan] = useState('');
 
-  // SAKLAR MODAL KAMERA
   const [isScanning, setIsScanning] = useState(false);
 
   useEffect(() => { return () => { photos.forEach(p => URL.revokeObjectURL(p.preview)); }; }, [photos]);
@@ -310,7 +301,6 @@ export default function Pemeriksaan() {
   return (
     <div className="max-w-4xl mx-auto pb-24 font-sans relative select-none">
       
-      {/* MODAL KAMERA DIPANGGIL DI SINI */}
       {isScanning && (
         <ScannerModal 
           onScan={(text) => {
@@ -321,7 +311,6 @@ export default function Pemeriksaan() {
         />
       )}
 
-      {/* MODAL PILIHAN KAMERA/GALERI */}
       {mediaSheet.isOpen && (
         <div className="fixed inset-0 bg-slate-900/60 z-[110] flex justify-center items-end sm:items-center p-0 sm:p-4 backdrop-blur-sm animate-in fade-in duration-300">
           <div className="bg-white w-full max-w-sm rounded-t-3xl sm:rounded-3xl p-6 pb-10 sm:pb-6 shadow-2xl animate-in slide-in-from-bottom-full sm:zoom-in-95 duration-300">
