@@ -5,6 +5,9 @@ import { collection, addDoc, runTransaction, doc, query, where, getDocs, orderBy
 import { dbLocal } from '../db/offlineDB';
 import { fetchWithRetry } from '../utils/network';
 
+// KITA KEMBALI KE HTML5-QRCODE (Mesin paling stabil & anti-blank!)
+import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode'; 
+
 const DRIVE_API_URL = "https://script.google.com/macros/s/AKfycbyJwmBp6pfgIgO9jSOl-RbQ6RMBTQPUX0zJFd_3TYqQ-egca9WNOImoKrLYW6PkQUDBYQ/exec";
 
 const KATEGORI_WAJIB = [
@@ -35,103 +38,85 @@ const compressImage = (file) => {
 };
 
 // ========================================================
-// KOMPONEN SCANNER MUTAKHIR (NATIVE GOOGLE ML-KIT API)
+// KOMPONEN KHUSUS SCANNER (ANTI BLACK SCREEN & JAGO 1D)
 // ========================================================
 function ScannerModal({ onScan, onClose }) {
   const [isTorchOn, setIsTorchOn] = useState(false);
+  
+  // Ukuran kotak sekarang murni HANYA visual CSS, tidak mengganggu kamera!
   const [boxWidth, setBoxWidth] = useState(340);
   const [boxHeight, setBoxHeight] = useState(140);
-  const [errorMsg, setErrorMsg] = useState('');
   
-  const videoRef = useRef(null);
-  const streamRef = useRef(null);
-  const intervalRef = useRef(null);
+  const scannerRef = useRef(null);
 
   useEffect(() => {
+    // Inisialisasi engine pada div dengan id="reader"
+    const html5QrCode = new Html5Qrcode("reader");
+    scannerRef.current = html5QrCode;
     let isMounted = true;
 
-    const startNativeScanner = async () => {
+    const startScanner = async () => {
       try {
-        // Cek dukungan teknologi mutakhir di HP
-        if (!('BarcodeDetector' in window)) {
-          setErrorMsg("HP atau Browser Anda belum mendukung Native Barcode Scanner (Gunakan Google Chrome Android terbaru).");
-          return;
-        }
-
-        // Buka Kamera dengan resolusi tajam
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: "environment",
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
-            focusMode: "continuous"
-          }
-        });
-
-        if (!isMounted || !videoRef.current) {
-          stream.getTracks().forEach(t => t.stop());
-          return;
-        }
-
-        streamRef.current = stream;
-        videoRef.current.srcObject = stream;
-        videoRef.current.setAttribute("playsinline", true);
-        await videoRef.current.play();
-
-        // Inisialisasi Google Machine Learning Barcode Detector
-        const barcodeDetector = new window.BarcodeDetector({
-          formats: ['code_128', 'code_39', 'code_93', 'ean_13', 'ean_8', 'itf', 'qr_code', 'upc_a', 'upc_e']
-        });
-
-        // Looping pemindaian super ringan 10x per detik (100ms)
-        intervalRef.current = setInterval(async () => {
-          if (videoRef.current && videoRef.current.readyState === videoRef.current.HAVE_ENOUGH_DATA) {
-            try {
-              const barcodes = await barcodeDetector.detect(videoRef.current);
-              if (barcodes.length > 0 && isMounted) {
-                // Barcode tertangkap oleh AI!
-                const text = barcodes[0].rawValue.trim().toUpperCase();
-                clearInterval(intervalRef.current); // Hentikan scan agar tidak dobel
-                onScan(text);
-              }
-            } catch (e) {
-              // Abaikan frame yang tidak memiliki barcode
+        await html5QrCode.start(
+          { facingMode: "environment" }, 
+          { 
+            fps: 15,
+            // qrbox SENGAJA DIHILANGKAN agar mesin membaca full screen dan tidak perlu restart saat ukuran kotak diubah
+            disableFlip: false,
+            // FOKUSKAN OTAKNYA HANYA KE BARCODE GUDANG (Hisense dkk)
+            formatsToSupport: [
+              Html5QrcodeSupportedFormats.CODE_128,
+              Html5QrcodeSupportedFormats.CODE_39,
+              Html5QrcodeSupportedFormats.EAN_13,
+              Html5QrcodeSupportedFormats.EAN_8,
+              Html5QrcodeSupportedFormats.QR_CODE
+            ]
+          },
+          (decodedText) => {
+            if (isMounted) {
+              isMounted = false;
+              onScan(decodedText.toUpperCase());
             }
+          },
+          (errorMessage) => {
+            // Abaikan error loop background
           }
-        }, 100);
+        );
 
+        // Setelah sukses menyala, nyalakan Auto-Focus Continuos
+        if (isMounted) {
+          const track = html5QrCode.getRunningTrack();
+          if (track) {
+            track.applyConstraints({ advanced: [{ focusMode: "continuous" }] })
+                 .catch(() => console.log("Auto-focus berjalan mode standar"));
+          }
+        }
       } catch (err) {
-        console.error(err);
-        if (isMounted) setErrorMsg("Gagal mengakses kamera. Pastikan izin kamera aktif.");
+        console.error("Gagal kamera:", err);
       }
     };
 
-    startNativeScanner();
+    startScanner();
 
-    // CLEANUP AMAN SAAT DITUTUP
+    // CLEANUP YANG AMAN UNTUK MENCEGAH KAMERA MENGGANTUNG
     return () => {
       isMounted = false;
-      if (intervalRef.current) clearInterval(intervalRef.current);
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => track.stop());
+      if (html5QrCode.isScanning) {
+        html5QrCode.stop().then(() => html5QrCode.clear()).catch(console.error);
       }
     };
-  }, [onScan]);
+  }, []); // <-- Dependencies KOSONG! Kamera nyala sekali, tidak akan restart gara-gara kotak diubah.
 
-  // FUNGSI SENTER ASLI MILIKMU TANPA DIUTAK-ATIK
+  // FUNGSI SENTER AMAN VIA HTML5-QRCODE
   const toggleTorch = async () => {
     try {
-      if (!streamRef.current) {
-        alert("Kamera belum siap, tunggu sebentar.");
-        return;
+      if (scannerRef.current && scannerRef.current.getState() === 2) { // 2 = SCANNING
+        const nextState = !isTorchOn;
+        await scannerRef.current.applyVideoConstraints({
+          advanced: [{ torch: nextState }]
+        });
+        setIsTorchOn(nextState);
       }
-      const track = streamRef.current.getVideoTracks()[0];
-      if (!track) return;
-      const nextState = !isTorchOn;
-      await track.applyConstraints({
-        advanced: [{ torch: nextState }]
-      });
-      setIsTorchOn(nextState);
     } catch (err) {
       alert("Senter gagal dinyalakan. HP/Browser ini mungkin memblokir akses senter via web.");
     }
@@ -149,32 +134,28 @@ function ScannerModal({ onScan, onClose }) {
         </div>
         
         <div className="relative bg-black w-full h-[360px] flex items-center justify-center overflow-hidden shrink-0">
-          {errorMsg ? (
-            <div className="p-6 text-center text-red-400 font-bold">{errorMsg}</div>
-          ) : (
-            <video ref={videoRef} className="w-full h-full object-contain" playsInline muted />
-          )}
+          {/* DIV READER UNTUK HTML5-QRCODE */}
+          <div id="reader" className="w-full h-full object-cover"></div>
           
-          {!errorMsg && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-              <div style={{ width: `${boxWidth}px`, height: `${boxHeight}px` }} className="border-2 border-[#34A853] relative shadow-[0_0_0_9999px_rgba(0,0,0,0.65)] transition-all duration-150">
-                <div className="absolute top-0 left-0 w-4 h-4 border-t-4 border-l-4 border-[#34A853] -mt-1 -ml-1"></div>
-                <div className="absolute top-0 right-0 w-4 h-4 border-t-4 border-r-4 border-[#34A853] -mt-1 -mr-1"></div>
-                <div className="absolute bottom-0 left-0 w-4 h-4 border-b-4 border-l-4 border-[#34A853] -mb-1 -ml-1"></div>
-                <div className="absolute bottom-0 right-0 w-4 h-4 border-b-4 border-r-4 border-[#34A853] -mb-1 -mr-1"></div>
-                <div className="absolute w-full h-0.5 bg-red-500/90 top-1/2 left-0 transform -translate-y-1/2 animate-pulse shadow-[0_0_8px_rgba(239,68,68,1)]"></div>
-              </div>
-              <p className="text-white text-xs font-bold mt-8 bg-black/70 px-4 py-2 rounded-full tracking-wide text-center leading-relaxed backdrop-blur-sm border border-white/10">
-                Teknologi AI Aktif. Jauhkan layar 10-15cm.
-              </p>
+          {/* TARGET BOX VISUAL (MURNI CSS, Tidak bikin kamera item!) */}
+          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10">
+            <div style={{ width: `${boxWidth}px`, height: `${boxHeight}px` }} className="border-2 border-[#34A853] relative shadow-[0_0_0_9999px_rgba(0,0,0,0.65)] transition-all duration-150">
+              <div className="absolute top-0 left-0 w-4 h-4 border-t-4 border-l-4 border-[#34A853] -mt-1 -ml-1"></div>
+              <div className="absolute top-0 right-0 w-4 h-4 border-t-4 border-r-4 border-[#34A853] -mt-1 -mr-1"></div>
+              <div className="absolute bottom-0 left-0 w-4 h-4 border-b-4 border-l-4 border-[#34A853] -mb-1 -ml-1"></div>
+              <div className="absolute bottom-0 right-0 w-4 h-4 border-b-4 border-r-4 border-[#34A853] -mb-1 -mr-1"></div>
+              <div className="absolute w-full h-0.5 bg-red-500/90 top-1/2 left-0 transform -translate-y-1/2 animate-pulse shadow-[0_0_8px_rgba(239,68,68,1)]"></div>
             </div>
-          )}
+            <p className="text-white text-xs font-bold mt-8 bg-black/70 px-4 py-2 rounded-full tracking-wide text-center leading-relaxed backdrop-blur-sm border border-white/10">
+              Jauhkan layar 10-15cm. Sensor membaca area di sekitar garis merah.
+            </p>
+          </div>
         </div>
 
         <div className="p-4 bg-slate-50 border-t border-slate-100 flex flex-col gap-3 shrink-0">
           <div className="flex justify-between items-center text-xs font-bold text-slate-600">
             <span>Sesuaikan Panduan Bidik:</span>
-            <button type="button" onClick={toggleTorch} disabled={!!errorMsg} className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border text-xs font-bold transition-all ${isTorchOn ? 'bg-amber-400 text-amber-900 border-amber-300 shadow-sm' : 'bg-slate-800 text-white border-transparent disabled:opacity-50'}`}>
+            <button type="button" onClick={toggleTorch} className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border text-xs font-bold transition-all ${isTorchOn ? 'bg-amber-400 text-amber-900 border-amber-300 shadow-sm' : 'bg-slate-800 text-white border-transparent'}`}>
               {isTorchOn ? '💡 Matikan Senter' : '🔦 Saklar Senter'}
             </button>
           </div>
@@ -329,11 +310,11 @@ export default function Pemeriksaan() {
   return (
     <div className="max-w-4xl mx-auto pb-24 font-sans relative select-none">
       
-      {/* PANGGIL KOMPONEN SCANNER MUTAKHIR KITA DI SINI */}
+      {/* MODAL KAMERA DIPANGGIL DI SINI */}
       {isScanning && (
         <ScannerModal 
           onScan={(text) => {
-            setSerialNumber(text);
+            setSerialNumber(text.trim());
             setIsScanning(false);
           }}
           onClose={() => setIsScanning(false)}
