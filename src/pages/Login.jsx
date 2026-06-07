@@ -137,11 +137,15 @@ export default function Login() {
 
       <div className="w-full max-w-md bg-white p-8 rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100 relative z-10">
         <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-[#1A73E8] rounded-2xl mx-auto flex items-center justify-center shadow-lg shadow-blue-500/30 mb-4">
-            <span className="text-3xl font-black text-white">S</span>
-          </div>
-          <h1 className="text-2xl font-black text-slate-900 tracking-tight">SIP</h1>
-          <p className="text-sm text-slate-500 font-medium mt-1">Sistem Inspeksi SMP</p>
+          
+          {/* LOGO ASLI KAMU SUDAH TERPASANG DI SINI & ANTI ERROR */}
+          <img 
+            src="/logo-512.png" 
+            alt="Logo SIP" 
+            className="w-28 h-auto object-contain drop-shadow-md mx-auto mb-4" 
+          />
+          
+      
         </div>
 
         {error && (
