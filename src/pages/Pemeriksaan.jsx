@@ -5,8 +5,8 @@ import { collection, addDoc, runTransaction, doc, query, where, getDocs, orderBy
 import { dbLocal } from '../db/offlineDB';
 import { fetchWithRetry } from '../utils/network';
 
-// KITA PAKAI HTML5-QRCODE DENGAN FITUR RAHASIA AI AKTIF!
-import { Html5Qrcode } from 'html5-qrcode'; 
+// IMPORT ZXING ASLI BAWAANMU
+import { BrowserMultiFormatReader } from '@zxing/browser';
 
 const DRIVE_API_URL = "https://script.google.com/macros/s/AKfycbyJwmBp6pfgIgO9jSOl-RbQ6RMBTQPUX0zJFd_3TYqQ-egca9WNOImoKrLYW6PkQUDBYQ/exec";
 
@@ -37,149 +37,6 @@ const compressImage = (file) => {
   });
 };
 
-// ========================================================
-// KOMPONEN KHUSUS SCANNER (MODE AI GOOGLE ML-KIT AKTIF)
-// ========================================================
-function ScannerModal({ onScan, onClose }) {
-  const [isTorchOn, setIsTorchOn] = useState(false);
-  const [boxWidth, setBoxWidth] = useState(340);
-  const [boxHeight, setBoxHeight] = useState(140);
-  const scannerRef = useRef(null);
-
-  useEffect(() => {
-    // 🪄 INI DIA KUNCI RAHASIANYA! Membangunkan AI bawaan Android Chrome
-    const html5QrCode = new Html5Qrcode("reader", {
-      experimentalFeatures: {
-        useBarCodeDetectorIfSupported: true // Menggunakan Native API yang super tajam!
-      }
-    });
-    
-    scannerRef.current = html5QrCode;
-    let isMounted = true;
-
-    const startScanner = async () => {
-      try {
-        await html5QrCode.start(
-          { facingMode: "environment" }, 
-          { 
-            fps: 15, // Cek gambar 15x per detik
-            videoConstraints: {
-              width: { ideal: 1280 }, // Memaksa lensa merender HD ke mesin
-              height: { ideal: 720 },
-              focusMode: "continuous"
-            }
-          },
-          (decodedText) => {
-            if (isMounted) {
-              isMounted = false;
-              // Mainkan bunyi 'beep' opsional jika mau, atau langsung close
-              onScan(decodedText.toUpperCase());
-            }
-          },
-          (errorMessage) => {
-            // Error "not found" diabaikan agar console tidak berisik
-          }
-        );
-
-        if (isMounted) {
-          const track = html5QrCode.getRunningTrack();
-          if (track) {
-            track.applyConstraints({ advanced: [{ focusMode: "continuous" }] }).catch(() => {});
-          }
-        }
-      } catch (err) {
-        console.error("Gagal membuka kamera:", err);
-      }
-    };
-
-    startScanner();
-
-    return () => {
-      isMounted = false;
-      if (html5QrCode.isScanning) {
-        html5QrCode.stop().then(() => html5QrCode.clear()).catch(console.error);
-      }
-    };
-  }, [onScan]); 
-
-  // FUNGSI SENTER AMAN (100% Tidak Disentuh)
-  const toggleTorch = async () => {
-    try {
-      if (scannerRef.current && scannerRef.current.getState() === 2) { 
-        const nextState = !isTorchOn;
-        await scannerRef.current.applyVideoConstraints({
-          advanced: [{ torch: nextState }]
-        });
-        setIsTorchOn(nextState);
-      }
-    } catch (err) {
-      alert("Senter gagal dinyalakan. HP/Browser ini mungkin memblokir akses senter via web.");
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 bg-slate-900/95 z-[120] flex flex-col justify-center items-center backdrop-blur-md animate-in fade-in duration-300">
-      <div className="w-full max-w-md bg-white rounded-3xl overflow-hidden shadow-2xl m-4 flex flex-col animate-in zoom-in-95 duration-300">
-        <div className="p-4 bg-slate-800 flex justify-between items-center text-white shrink-0">
-          <div className="flex items-center gap-2">
-            <span className="text-xl">📷</span>
-            <h3 className="font-bold text-sm tracking-wide">Pindai Serial Number</h3>
-          </div>
-          <button onClick={onClose} className="text-slate-300 hover:text-white bg-slate-700 hover:bg-red-500 rounded-full w-8 h-8 flex items-center justify-center transition-colors font-bold">✕</button>
-        </div>
-        
-        <div className="relative bg-black w-full h-[360px] flex items-center justify-center overflow-hidden shrink-0">
-          <div id="reader" className="w-full h-full object-cover"></div>
-          
-          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10">
-            <div style={{ width: `${boxWidth}px`, height: `${boxHeight}px` }} className="border-2 border-[#34A853] relative shadow-[0_0_0_9999px_rgba(0,0,0,0.65)] transition-all duration-150">
-              <div className="absolute top-0 left-0 w-4 h-4 border-t-4 border-l-4 border-[#34A853] -mt-1 -ml-1"></div>
-              <div className="absolute top-0 right-0 w-4 h-4 border-t-4 border-r-4 border-[#34A853] -mt-1 -mr-1"></div>
-              <div className="absolute bottom-0 left-0 w-4 h-4 border-b-4 border-l-4 border-[#34A853] -mb-1 -ml-1"></div>
-              <div className="absolute bottom-0 right-0 w-4 h-4 border-b-4 border-r-4 border-[#34A853] -mb-1 -mr-1"></div>
-              <div className="absolute w-full h-0.5 bg-red-500/90 top-1/2 left-0 transform -translate-y-1/2 animate-pulse shadow-[0_0_8px_rgba(239,68,68,1)]"></div>
-            </div>
-            <p className="text-white text-[10px] font-bold mt-8 bg-black/70 px-4 py-2 rounded-full tracking-wide text-center leading-relaxed backdrop-blur-sm border border-white/10">
-              Fitur AI Cerdas Aktif. <br />Jauhkan layar sedikit agar barcode fokus.
-            </p>
-          </div>
-        </div>
-
-        <div className="p-4 bg-slate-50 border-t border-slate-100 flex flex-col gap-3 shrink-0">
-          <div className="flex justify-between items-center text-xs font-bold text-slate-600">
-            <span>Sesuaikan Area (Visual):</span>
-            <button type="button" onClick={toggleTorch} className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border text-xs font-bold transition-all ${isTorchOn ? 'bg-amber-400 text-amber-900 border-amber-300 shadow-sm' : 'bg-slate-800 text-white border-transparent'}`}>
-              {isTorchOn ? '💡 Matikan Senter' : '🔦 Saklar Senter'}
-            </button>
-          </div>
-          
-          <div className="grid grid-cols-2 gap-3">
-            <div className="flex items-center justify-between bg-white p-2 rounded-xl border border-slate-200">
-              <span className="text-[11px] font-black text-slate-400 pl-1 uppercase">Lebar</span>
-              <div className="flex items-center gap-2">
-                <button type="button" onClick={() => setBoxWidth(w => Math.max(160, w - 20))} className="w-8 h-8 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-lg font-black transition-colors">-</button>
-                <span className="font-mono text-xs font-black text-slate-700 w-12 text-center">{boxWidth}</span>
-                <button type="button" onClick={() => setBoxWidth(w => Math.min(360, w + 20))} className="w-8 h-8 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-lg font-black transition-colors">+</button>
-              </div>
-            </div>
-            <div className="flex items-center justify-between bg-white p-2 rounded-xl border border-slate-200">
-              <span className="text-[11px] font-black text-slate-400 pl-1 uppercase">Tinggi</span>
-              <div className="flex items-center gap-2">
-                <button type="button" onClick={() => setBoxHeight(h => Math.max(40, h - 15))} className="w-8 h-8 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-lg font-black transition-colors">-</button>
-                <span className="font-mono text-xs font-black text-slate-700 w-12 text-center">{boxHeight}</span>
-                <button type="button" onClick={() => setBoxHeight(h => Math.min(200, h + 15))} className="w-8 h-8 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-lg font-black transition-colors">+</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ========================================================
-// KOMPONEN UTAMA
-// ========================================================
 export default function Pemeriksaan() {
   const { user } = useAuth();
   
@@ -192,6 +49,7 @@ export default function Pemeriksaan() {
   
   const [uploadMode, setUploadMode] = useState('kategori'); 
   const [photos, setPhotos] = useState([]); 
+  
   const [mediaSheet, setMediaSheet] = useState({ isOpen: false, kategori: null });
   
   const [isUploading, setIsUploading] = useState(false);
@@ -201,7 +59,117 @@ export default function Pemeriksaan() {
   const [isLaporanLoading, setIsLaporanLoading] = useState(false);
   const [searchLaporan, setSearchLaporan] = useState('');
 
+  // ========================================================
+  // STATE SCANNER ZXING ASLI MILIKMU
+  // ========================================================
   const [isScanning, setIsScanning] = useState(false);
+  const [isTorchOn, setIsTorchOn] = useState(false);
+  const [boxWidth, setBoxWidth] = useState(340);
+  const [boxHeight, setBoxHeight] = useState(140);
+  
+  const videoRef = useRef(null);
+  const scannerTrackRef = useRef(null);
+
+  useEffect(() => {
+    if (!isScanning) return;
+
+    const codeReader = new BrowserMultiFormatReader();
+    let localStream = null;
+    let isScanned = false; 
+    let scanTimeout = null;
+
+    setIsTorchOn(false);
+
+    const startScanner = async () => {
+      try {
+        // Ambil stream kamera dengan resolusi 720p sesuai kodemu
+        localStream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: "environment",
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          }
+        });
+
+        if (!videoRef.current) return;
+        videoRef.current.srcObject = localStream;
+        videoRef.current.setAttribute("playsinline", true);
+        await videoRef.current.play();
+
+        const track = localStream.getVideoTracks()[0];
+        scannerTrackRef.current = track;
+
+        // Scan Loop Manual Aslimu yang diperbaiki sedikit agar tidak blank putih
+        const scanFrame = async () => {
+          if (isScanned || !videoRef.current) return;
+
+          try {
+            const result = await codeReader.decodeOnceFromVideoElement(videoRef.current);
+            if (result && !isScanned) {
+              isScanned = true;
+              const cleanValue = result.text.trim().toUpperCase();
+              
+              setSerialNumber(cleanValue);
+              
+              setTimeout(() => {
+                setIsScanning(false);
+              }, 200);
+              return; 
+            }
+          } catch (err) {
+            // Abaikan error saat tidak ketemu barcode
+          }
+
+          if (!isScanned) {
+            scanTimeout = setTimeout(scanFrame, 150);
+          }
+        };
+
+        scanFrame();
+
+      } catch (err) {
+        console.error("Gagal inisialisasi kamera:", err);
+        setError("Kamera gagal diakses. Pastikan izin kamera sudah diberikan.");
+        setIsScanning(false);
+      }
+    };
+
+    startScanner();
+
+    // CLEANUP KETIKA MODAL DITUTUP (Mencegah Kamera Nyala Terus & Anti-Blank)
+    return () => {
+      isScanned = true;
+      if (scanTimeout) clearTimeout(scanTimeout);
+      
+      if (localStream) {
+        localStream.getTracks().forEach(track => track.stop());
+      }
+      scannerTrackRef.current = null;
+    };
+  }, [isScanning]);
+
+  // ========================================================
+  // FUNGSI SENTER 100% ASLI MILIKMU TANPA DIUTAK-ATIK
+  // ========================================================
+  const toggleTorch = async () => {
+    try {
+      const track = scannerTrackRef.current;
+      if (!track) {
+        alert("Kamera belum siap, tunggu sebentar.");
+        return;
+      }
+
+      const nextState = !isTorchOn;
+      await track.applyConstraints({
+        advanced: [{ torch: nextState }]
+      });
+      setIsTorchOn(nextState);
+
+    } catch (err) {
+      alert("Senter gagal dinyalakan. HP/Browser ini mungkin memblokir akses senter via web.");
+    }
+  };
+  // ========================================================
 
   useEffect(() => { return () => { photos.forEach(p => URL.revokeObjectURL(p.preview)); }; }, [photos]);
   useEffect(() => { if (activeTab === 'laporan') fetchLaporan(); }, [activeTab]);
@@ -301,16 +269,72 @@ export default function Pemeriksaan() {
   return (
     <div className="max-w-4xl mx-auto pb-24 font-sans relative select-none">
       
+      {/* MODAL SCANNER ASLIMU */}
       {isScanning && (
-        <ScannerModal 
-          onScan={(text) => {
-            setSerialNumber(text.trim());
-            setIsScanning(false);
-          }}
-          onClose={() => setIsScanning(false)}
-        />
+        <div className="fixed inset-0 bg-slate-900/95 z-[120] flex flex-col justify-center items-center backdrop-blur-md animate-in fade-in duration-300">
+          <div className="w-full max-w-md bg-white rounded-3xl overflow-hidden shadow-2xl m-4 flex flex-col animate-in zoom-in-95 duration-300">
+            <div className="p-4 bg-slate-800 flex justify-between items-center text-white shrink-0">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">📷</span>
+                <h3 className="font-bold text-sm tracking-wide">Pindai Serial Number</h3>
+              </div>
+              <button onClick={() => setIsScanning(false)} className="text-slate-300 hover:text-white bg-slate-700 hover:bg-red-500 rounded-full w-8 h-8 flex items-center justify-center transition-colors font-bold">✕</button>
+            </div>
+            
+            <div className="relative bg-black w-full h-[360px] flex items-center justify-center overflow-hidden shrink-0">
+              <video 
+                ref={videoRef}
+                className="w-full h-full object-cover" 
+                autoPlay
+                muted
+                playsInline
+              />
+              
+              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                <div style={{ width: `${boxWidth}px`, height: `${boxHeight}px` }} className="border-2 border-[#34A853] relative shadow-[0_0_0_9999px_rgba(0,0,0,0.65)] transition-all duration-150">
+                  <div className="absolute top-0 left-0 w-4 h-4 border-t-4 border-l-4 border-[#34A853] -mt-1 -ml-1"></div>
+                  <div className="absolute top-0 right-0 w-4 h-4 border-t-4 border-r-4 border-[#34A853] -mt-1 -mr-1"></div>
+                  <div className="absolute bottom-0 left-0 w-4 h-4 border-b-4 border-l-4 border-[#34A853] -mb-1 -ml-1"></div>
+                  <div className="absolute bottom-0 right-0 w-4 h-4 border-b-4 border-r-4 border-[#34A853] -mb-1 -mr-1"></div>
+                  <div className="absolute w-full h-0.5 bg-red-500/90 top-1/2 left-0 transform -translate-y-1/2 animate-pulse shadow-[0_0_8px_rgba(239,68,68,1)]"></div>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-4 bg-slate-50 border-t border-slate-100 flex flex-col gap-3 shrink-0">
+              <div className="flex justify-between items-center text-xs font-bold text-slate-600">
+                <span>Sesuaikan Panduan Bidik:</span>
+                <button type="button" onClick={toggleTorch} className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border text-xs font-bold transition-all ${isTorchOn ? 'bg-amber-400 text-amber-900 border-amber-300 shadow-sm' : 'bg-slate-800 text-white border-transparent'}`}>
+                  {isTorchOn ? '💡 Senter Menyala' : '🔦 Saklar Senter'}
+                </button>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex items-center justify-between bg-white p-2 rounded-xl border border-slate-200">
+                  <span className="text-[11px] font-black text-slate-400 pl-1 uppercase">Lebar</span>
+                  <div className="flex items-center gap-2">
+                    <button type="button" onClick={() => setBoxWidth(w => Math.max(160, w - 20))} className="w-8 h-8 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-lg font-black transition-colors">-</button>
+                    <span className="font-mono text-xs font-black text-slate-700 w-12 text-center">{boxWidth}px</span>
+                    <button type="button" onClick={() => setBoxWidth(w => Math.min(360, w + 20))} className="w-8 h-8 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-lg font-black transition-colors">+</button>
+                  </div>
+                </div>
+                
+                <div className="flex items-center justify-between bg-white p-2 rounded-xl border border-slate-200">
+                  <span className="text-[11px] font-black text-slate-400 pl-1 uppercase">Tinggi</span>
+                  <div className="flex items-center gap-2">
+                    <button type="button" onClick={() => setBoxHeight(h => Math.max(40, h - 15))} className="w-8 h-8 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-lg font-black transition-colors">-</button>
+                    <span className="font-mono text-xs font-black text-slate-700 w-12 text-center">{boxHeight}px</span>
+                    <button type="button" onClick={() => setBoxHeight(h => Math.min(200, h + 15))} className="w-8 h-8 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-lg font-black transition-colors">+</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
       )}
 
+      {/* MODAL PILIHAN KAMERA/GALERI */}
       {mediaSheet.isOpen && (
         <div className="fixed inset-0 bg-slate-900/60 z-[110] flex justify-center items-end sm:items-center p-0 sm:p-4 backdrop-blur-sm animate-in fade-in duration-300">
           <div className="bg-white w-full max-w-sm rounded-t-3xl sm:rounded-3xl p-6 pb-10 sm:pb-6 shadow-2xl animate-in slide-in-from-bottom-full sm:zoom-in-95 duration-300">
