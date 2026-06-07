@@ -59,9 +59,6 @@ export default function Pemeriksaan() {
   const [isLaporanLoading, setIsLaporanLoading] = useState(false);
   const [searchLaporan, setSearchLaporan] = useState('');
 
-  // ========================================================
-  // STATE SCANNER ZXING ASLI MILIKMU
-  // ========================================================
   const [isScanning, setIsScanning] = useState(false);
   const [isTorchOn, setIsTorchOn] = useState(false);
   const [boxWidth, setBoxWidth] = useState(340);
@@ -70,6 +67,36 @@ export default function Pemeriksaan() {
   const videoRef = useRef(null);
   const scannerTrackRef = useRef(null);
 
+  // ========================================================
+  // JEBAKAN BATMAN UNTUK TOMBOL BACK HP (ANTI KELUAR SENGAJA)
+  // ========================================================
+  useEffect(() => {
+    // Memasang "penahan" di riwayat browser saat halaman dibuka
+    window.history.pushState(null, null, window.location.pathname);
+
+    const handleBackButton = (e) => {
+      // Mencegat tombol kembali di HP
+      const confirmExit = window.confirm("Apakah kamu yakin ingin keluar dari halaman Pemeriksaan?");
+      
+      if (!confirmExit) {
+        // Jika pencet "Batal/Cancel", pasang penahannya lagi
+        window.history.pushState(null, null, window.location.pathname);
+      } else {
+        // Jika pencet "Oke/Yes", biarkan keluar
+        window.history.back();
+      }
+    };
+
+    window.addEventListener('popstate', handleBackButton);
+
+    return () => {
+      window.removeEventListener('popstate', handleBackButton);
+    };
+  }, []);
+
+  // ========================================================
+  // LOGIKA SCANNER ZXING ASLI
+  // ========================================================
   useEffect(() => {
     if (!isScanning) return;
 
@@ -82,7 +109,6 @@ export default function Pemeriksaan() {
 
     const startScanner = async () => {
       try {
-        // Ambil stream kamera dengan resolusi 720p sesuai kodemu
         localStream = await navigator.mediaDevices.getUserMedia({
           video: {
             facingMode: "environment",
@@ -99,7 +125,6 @@ export default function Pemeriksaan() {
         const track = localStream.getVideoTracks()[0];
         scannerTrackRef.current = track;
 
-        // Scan Loop Manual Aslimu yang diperbaiki sedikit agar tidak blank putih
         const scanFrame = async () => {
           if (isScanned || !videoRef.current) return;
 
@@ -136,7 +161,6 @@ export default function Pemeriksaan() {
 
     startScanner();
 
-    // CLEANUP KETIKA MODAL DITUTUP (Mencegah Kamera Nyala Terus & Anti-Blank)
     return () => {
       isScanned = true;
       if (scanTimeout) clearTimeout(scanTimeout);
@@ -148,9 +172,6 @@ export default function Pemeriksaan() {
     };
   }, [isScanning]);
 
-  // ========================================================
-  // FUNGSI SENTER 100% ASLI MILIKMU TANPA DIUTAK-ATIK
-  // ========================================================
   const toggleTorch = async () => {
     try {
       const track = scannerTrackRef.current;
@@ -169,7 +190,6 @@ export default function Pemeriksaan() {
       alert("Senter gagal dinyalakan. HP/Browser ini mungkin memblokir akses senter via web.");
     }
   };
-  // ========================================================
 
   useEffect(() => { return () => { photos.forEach(p => URL.revokeObjectURL(p.preview)); }; }, [photos]);
   useEffect(() => { if (activeTab === 'laporan') fetchLaporan(); }, [activeTab]);
@@ -269,7 +289,6 @@ export default function Pemeriksaan() {
   return (
     <div className="max-w-4xl mx-auto pb-24 font-sans relative select-none">
       
-      {/* MODAL SCANNER ASLIMU */}
       {isScanning && (
         <div className="fixed inset-0 bg-slate-900/95 z-[120] flex flex-col justify-center items-center backdrop-blur-md animate-in fade-in duration-300">
           <div className="w-full max-w-md bg-white rounded-3xl overflow-hidden shadow-2xl m-4 flex flex-col animate-in zoom-in-95 duration-300">
@@ -305,7 +324,7 @@ export default function Pemeriksaan() {
               <div className="flex justify-between items-center text-xs font-bold text-slate-600">
                 <span>Sesuaikan Panduan Bidik:</span>
                 <button type="button" onClick={toggleTorch} className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border text-xs font-bold transition-all ${isTorchOn ? 'bg-amber-400 text-amber-900 border-amber-300 shadow-sm' : 'bg-slate-800 text-white border-transparent'}`}>
-                  {isTorchOn ? '💡 Senter Menyala' : '🔦 Saklar Senter'}
+                  {isTorchOn ? '💡 Matikan Senter' : '🔦 Saklar Senter'}
                 </button>
               </div>
               
@@ -334,7 +353,6 @@ export default function Pemeriksaan() {
         </div>
       )}
 
-      {/* MODAL PILIHAN KAMERA/GALERI */}
       {mediaSheet.isOpen && (
         <div className="fixed inset-0 bg-slate-900/60 z-[110] flex justify-center items-end sm:items-center p-0 sm:p-4 backdrop-blur-sm animate-in fade-in duration-300">
           <div className="bg-white w-full max-w-sm rounded-t-3xl sm:rounded-3xl p-6 pb-10 sm:pb-6 shadow-2xl animate-in slide-in-from-bottom-full sm:zoom-in-95 duration-300">
