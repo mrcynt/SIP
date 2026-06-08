@@ -82,6 +82,46 @@ export default function Dashboard() {
     }).format(new Date(isoString));
   };
 
+  // ========================================================
+  // FITUR EXPORT EXCEL (CSV)
+  // ========================================================
+  const exportToCSV = () => {
+    if (filteredRecords.length === 0) {
+      alert("Tidak ada data untuk diekspor!");
+      return;
+    }
+
+    // Buat Header Excel
+    let csvContent = "Waktu Input,Serial Number,Kategori Unit,Tahap,Petugas\n";
+
+    // Isi Data Baris per Baris
+    filteredRecords.forEach(record => {
+      const waktu = record.timestamp ? new Date(record.timestamp).toLocaleString('id-ID') : '-';
+      const sn = record.formatTampil ? record.formatTampil : record.serialNumber;
+      const unit = record.unit || '-';
+      const tahap = record.tahap || '-';
+      const petugas = record.petugas || '-';
+
+      // Bungkus pakai tanda kutip ganda supaya rapi di kolom Excel
+      csvContent += `"${waktu}","${sn}","${unit}","${tahap}","${petugas}"\n`;
+    });
+
+    // Proses Download File Otomatis
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    
+    // Nama file disesuaikan dengan tanggal hari ini
+    const today = new Date().toISOString().slice(0, 10);
+    link.setAttribute("download", `Laporan_Inspeksi_SIP_${today}.csv`);
+    
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+  // ========================================================
+
   const filteredRecords = recentRecords.filter(record => {
     const matchSearch = (record.serialNumber && record.serialNumber.toLowerCase().includes(searchTerm.toLowerCase())) || 
                         (record.petugas && record.petugas.toLowerCase().includes(searchTerm.toLowerCase()));
@@ -115,7 +155,6 @@ export default function Dashboard() {
           {dashboardData.map((unitData, index) => (
             <div key={index} className="bg-white p-6 md:p-8 rounded-3xl shadow-[0_4px_24px_rgba(0,0,0,0.04)] border border-slate-50 mb-10">
               
-              {/* HEADER YANG SUDAH DIBERSIHKAN (Tinggal tulisan "BRACKET", "INTERACTIVE FLAT PANEL", dll) */}
               <div className="mb-6 pb-4 border-b border-slate-100">
                 <h2 className="text-3xl font-black text-slate-800 tracking-tight uppercase">
                   {unitData.unitName}
@@ -147,7 +186,7 @@ export default function Dashboard() {
                           <Cell fill={COLOR_SELESAI} />
                           <Cell fill={COLOR_SISA_LIGHT} />
                         </Pie>
-                        <RechartsTooltip contentStyle={{borderRadius: '12px', border: 'none', backgroundColor: '#FFFFFF', color: '#000000'}} />
+                        <RechartsTooltip contentStyle={{borderRadius: '12px', border: 'none', backgroundColor: '#FFFFFF', color: '#000000', fontWeight: 'bold'}} />
                         <Legend verticalAlign="bottom" height={36} iconType="circle" />
                       </PieChart>
                     </ResponsiveContainer>
@@ -179,11 +218,17 @@ export default function Dashboard() {
             </div>
           ))}
 
-          {/* TABEL DATA RIWAYAT */}
+          {/* TABEL DATA RIWAYAT DENGAN TOMBOL EXPORT */}
           <div className="bg-white rounded-3xl shadow-[0_4px_24px_rgba(0,0,0,0.04)] border border-slate-50 overflow-hidden mb-8">
             <div className="p-6 md:p-8 border-b border-slate-100 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
               <h2 className="text-lg font-bold text-slate-800 shrink-0">Riwayat Pemeriksaan Keseluruhan</h2>
               <div className="flex flex-col sm:flex-row w-full md:w-auto gap-3">
+                
+                {/* TOMBOL EXPORT BARU */}
+                <button onClick={exportToCSV} className="px-5 py-2 bg-[#107C41] hover:bg-[#0B5C30] text-white rounded-full text-sm font-bold shadow-sm transition-all whitespace-nowrap flex items-center justify-center gap-2">
+                  📥 Export Excel
+                </button>
+                
                 <input type="text" placeholder="🔍 Cari SN atau Petugas..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="px-4 py-2 bg-[#F8F9FA] border border-slate-200 rounded-full text-sm outline-none focus:border-[#4285F4] text-slate-800 w-full sm:w-64 transition-all" />
                 <select value={filterTahap} onChange={(e) => setFilterTahap(e.target.value)} className="px-4 py-2 bg-[#F8F9FA] border border-slate-200 text-slate-700 rounded-full text-sm outline-none cursor-pointer"><option value="">Semua Tahap</option>{uniqueTahaps.map((thp, idx) => (<option key={idx} value={thp}>{thp}</option>))}</select>
               </div>
