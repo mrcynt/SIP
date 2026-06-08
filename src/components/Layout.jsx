@@ -31,7 +31,6 @@ function PingIndicator() {
   if (ping > 150 && ping <= 300) { badgeStyle = "bg-amber-50 text-[#B06000] border-amber-200"; dotStyle = "bg-[#FBBC05] animate-pulse"; } 
   else if (ping > 300) { badgeStyle = "bg-red-50 text-[#A50E0E] border-red-200"; dotStyle = "bg-[#EA4335] animate-pulse"; }
 
-  // Tambahan whitespace-nowrap agar teks tidak turun/jomplang di layar sempit
   return (<span className={`px-2.5 sm:px-3 py-1 rounded-full font-mono font-black text-[10px] sm:text-[11px] flex items-center gap-1.5 border ${badgeStyle} transition-all shadow-sm whitespace-nowrap`}><span className={`w-1.5 h-1.5 rounded-full ${dotStyle}`}></span>{ping} ms</span>);
 }
 
@@ -48,8 +47,10 @@ export default function Layout({ children }) {
   const [showQueueModal, setShowQueueModal] = useState(false);
 
   const [isRefreshing, setIsRefreshing] = useState(false);
-  
   const [showLogoutModal, setShowLogoutModal] = useState(false);
+  
+  // STATE BARU: KONTROL MODAL PUSAT BANTUAN
+  const [showHelpModal, setShowHelpModal] = useState(false);
 
   useEffect(() => { document.documentElement.classList.remove('dark'); }, []);
 
@@ -105,6 +106,45 @@ export default function Layout({ children }) {
   return (
     <div className="flex h-screen w-full bg-slate-50 text-slate-800 font-sans overflow-hidden flex-col relative select-none">
       
+      {/* POP-UP MODAL PUSAT BANTUAN HYBRID */}
+      {showHelpModal && (
+        <div className="fixed inset-0 bg-slate-900/70 z-[80] flex justify-center items-center p-4 backdrop-blur-sm animate-in fade-in duration-300">
+          <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[85vh] animate-in zoom-in-95 duration-300">
+            <div className="p-5 sm:p-6 bg-[#1A73E8] text-white flex justify-between items-center shrink-0">
+              <h3 className="font-extrabold text-lg flex items-center gap-2"><span>ℹ️</span> Pusat Bantuan SIP</h3>
+              <button onClick={() => setShowHelpModal(false)} className="text-white hover:bg-white/20 w-8 h-8 rounded-full flex items-center justify-center transition-colors font-bold text-lg">✕</button>
+            </div>
+            
+            <div className="p-5 sm:p-6 overflow-y-auto flex-1 bg-slate-50 space-y-4">
+              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-[0_2px_8px_rgba(0,0,0,0.02)]">
+                <h4 className="font-black text-slate-800 text-sm mb-1.5">📸 Kamera Scanner Tidak Terbuka?</h4>
+                <p className="text-xs font-medium text-slate-600 leading-relaxed">Pastikan Anda sudah memberikan izin (allow) akses kamera pada browser Chrome Anda. Jika macet, coba segarkan (refresh) halaman.</p>
+              </div>
+              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-[0_2px_8px_rgba(0,0,0,0.02)]">
+                <h4 className="font-black text-slate-800 text-sm mb-1.5">📡 Sinyal Hilang di Lapangan?</h4>
+                <p className="text-xs font-medium text-slate-600 leading-relaxed">Jangan panik! Tetap lanjutkan proses scan dan simpan. Data akan otomatis masuk ke memori HP Anda dan akan langsung dikirim ke server saat sinyal internet kembali.</p>
+              </div>
+              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-[0_2px_8px_rgba(0,0,0,0.02)]">
+                <h4 className="font-black text-slate-800 text-sm mb-1.5">📦 Cara Memotong Stok Alat Gudang?</h4>
+                <p className="text-xs font-medium text-slate-600 leading-relaxed">Gunakan tombol <span className="font-bold text-amber-700 bg-amber-50 px-1 rounded">🤝 Pakai</span> berwarna kuning di halaman Peralatan. Jangan mengedit stok secara manual agar histori pemakaian tercatat akurat.</p>
+              </div>
+            </div>
+
+            <div className="p-5 sm:p-6 bg-white border-t border-slate-100 flex flex-col gap-3 shrink-0">
+              <p className="text-xs font-bold text-slate-500 text-center">Butuh panduan yang lebih detail beserta gambar?</p>
+              <a 
+                href="/Panduan_SIP.pdf" 
+                target="_blank" 
+                rel="noopener noreferrer" 
+                className="w-full py-4 bg-slate-900 hover:bg-black text-white text-sm font-bold rounded-xl flex items-center justify-center gap-2 transition-all shadow-md active:scale-95"
+              >
+                📖 Buka Buku Panduan Lengkap (PDF)
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* POP-UP DIALOG KONFIRMASI KELUAR SESI */}
       <Modal 
         isOpen={showLogoutModal} 
@@ -193,12 +233,20 @@ export default function Layout({ children }) {
                 </svg>
               </button>
 
+              {/* TOMBOL PUSAT BANTUAN */}
+              <button 
+                onClick={() => setShowHelpModal(true)} 
+                title="Pusat Bantuan & Panduan"
+                className="flex items-center justify-center w-8 h-8 bg-blue-50 text-[#1A73E8] hover:bg-blue-100 border border-blue-200 rounded-full transition-all shadow-sm focus:outline-none font-black text-sm"
+              >
+                ?
+              </button>
+
               <span className="bg-slate-100 text-slate-600 px-2 sm:px-3 py-1.5 rounded-full uppercase tracking-wider border border-slate-200 shadow-sm flex items-center gap-1.5 whitespace-nowrap">
                 <span className="text-[10px] text-slate-400 hidden sm:inline">User:</span>
                 <span className="text-[#1A73E8] font-black">{user?.username}</span>
               </span>
               
-              {/* TOMBOL KELUAR DIUBAH JADI IKON SAJA DI HP BIAR MINIMALIS */}
               <button 
                 onClick={() => setShowLogoutModal(true)} 
                 className="md:hidden text-red-600 p-1.5 sm:p-2 bg-red-50 hover:bg-red-100 rounded-lg transition-colors border border-red-100 shadow-sm"
@@ -211,7 +259,6 @@ export default function Layout({ children }) {
           <div className="flex-1 overflow-y-auto w-full max-w-7xl mx-auto p-4 md:p-8 pb-24 md:pb-8">{children}</div>
         </main>
 
-        {/* BOTTOM NAV BAR DIBERSIHKAN DARI TEKS */}
         <nav className="md:hidden fixed bottom-0 left-0 w-full bg-white border-t border-slate-200 flex justify-around items-center h-14 px-2 z-50 shadow-[0_-4px_12px_rgba(0,0,0,0.02)]">
           {menuItems.map((item) => {
             const isActive = location.pathname.includes(item.path);
