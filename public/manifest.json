@@ -1,7 +1,7 @@
 {
-  "name": "Sistem Inspeksi SMP",
-  "short_name": "SIGMA App",
-  "description": "Aplikasi pemeriksa barang dan scanner gudang",
+  "name": "SIP - Sistem Inspeksi SMP",
+  "short_name": "SIP",
+  "description": "Sistem Inspeksi SMP - Aplikasi pemeriksa barang",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
