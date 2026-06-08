@@ -30,7 +30,6 @@ export default function Arsip() {
 
   const [driveApiUrl, setDriveApiUrl] = useState('');
 
-  // STATE MODAL DIPERBARUI UNTUK MENDUKUNG TIPE SUCCESS
   const [modal, setModal] = useState({
     isOpen: false, type: 'confirm', targetRecord: null, title: '', message: '', confirmText: 'Ya, Hapus & Urutkan', showCancel: true
   });
@@ -99,7 +98,6 @@ export default function Arsip() {
       await batch.commit();
       logActivity(user.username, `Menghapus berkas ${rec.serialNumber} dari antrean.`);
       
-      // MUNCULKAN POP-UP SUCCESS
       setModal({ isOpen: true, type: 'success', title: 'Berhasil Dihapus!', message: `Berkas SN ${rec.serialNumber} berhasil dihapus dari sistem arsip.`, confirmText: 'Tutup', showCancel: false });
 
     } catch (err) { 
@@ -161,7 +159,8 @@ export default function Arsip() {
 
       <div className="bg-white rounded-3xl shadow-[0_4px_24px_rgba(0,0,0,0.04)] border border-slate-50 overflow-hidden">
         
-        <div className="p-6 md:p-8 bg-slate-50 border-b border-slate-100 flex flex-col xl:flex-row justify-between items-start xl:items-center gap-5">
+        <div className="p-4 sm:p-6 md:p-8 bg-slate-50 border-b border-slate-100 flex flex-col xl:flex-row justify-between items-start xl:items-center gap-5">
+          {/* PERBAIKAN RESPONSIVE PADA FILTER */}
           <div className="flex flex-col sm:flex-row w-full xl:w-auto gap-3 flex-wrap">
             <div className="relative w-full sm:w-64"><span className="absolute inset-y-0 left-0 flex items-center pl-4 text-slate-400">🔍</span><input type="text" placeholder="Cari SN / Petugas..." value={searchMonitoring} onChange={(e) => setSearchMonitoring(e.target.value)} className="pl-11 pr-4 py-3 bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-700 outline-none focus:border-[#4285F4] focus:ring-2 focus:ring-blue-50 w-full transition-all shadow-sm placeholder-slate-400" /></div>
             <input type="date" value={filterDate} onChange={(e) => setFilterDate(e.target.value)} className="px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-700 outline-none focus:border-[#4285F4] focus:ring-2 focus:ring-blue-50 cursor-pointer shadow-sm w-full sm:w-40 transition-all hover:bg-slate-50" title="Filter Berdasarkan Tanggal" />
@@ -175,7 +174,7 @@ export default function Arsip() {
           </div>
         </div>
 
-        <div className="p-6 md:p-8">
+        <div className="p-4 sm:p-6 md:p-8">
           {isLoading ? (
             <div className="text-center py-12 text-[#1A73E8] font-medium animate-pulse">Menyusun dan menyinkronkan data...</div>
           ) : (() => {
@@ -186,46 +185,58 @@ export default function Arsip() {
               <div className="space-y-4">
                 {Object.entries(grouped).map(([unitName, tabTahaps]) => (
                   <details key={unitName} className="group bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm hover:border-blue-300 transition-colors" open>
-                    <summary className="font-bold cursor-pointer p-5 flex items-center justify-between bg-slate-50/50 outline-none select-none">
-                      <div className="flex items-center gap-3">
-                        <span className="w-9 h-9 rounded-xl bg-blue-100 flex items-center justify-center text-blue-600 shadow-inner">🗂️</span>
-                        <span className="text-slate-800 tracking-wide uppercase text-lg">{unitName}</span>
+                    <summary className="font-bold cursor-pointer p-4 sm:p-5 flex items-center justify-between bg-slate-50/50 outline-none select-none">
+                      <div className="flex items-center gap-2 sm:gap-3">
+                        <span className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-blue-100 flex items-center justify-center text-blue-600 shadow-inner shrink-0">🗂️</span>
+                        <span className="text-slate-800 tracking-wide uppercase text-base sm:text-lg">{unitName}</span>
                       </div>
-                      <a href={`https://drive.google.com/drive/search?q=${encodeURIComponent(unitName)}`} target="_blank" rel="noreferrer" className="p-2 hover:bg-slate-200 rounded-xl transition-colors"><GoogleDriveIcon /></a>
+                      <a href={`https://drive.google.com/drive/search?q=${encodeURIComponent(unitName)}`} target="_blank" rel="noreferrer" className="p-2 hover:bg-slate-200 rounded-xl transition-colors shrink-0"><GoogleDriveIcon /></a>
                     </summary>
 
-                    <div className="p-4 pt-2 pl-6 sm:pl-14 space-y-3">
+                    <div className="p-3 sm:p-4 pt-2 pl-4 sm:pl-14 space-y-3">
                       {Object.entries(tabTahaps).map(([tahapName, haris]) => (
                         <details key={tahapName} className="group/tahap bg-white rounded-2xl border border-slate-100 shadow-[0_2px_8px_rgba(0,0,0,0.02)]" open>
-                          <summary className="font-bold cursor-pointer p-4 flex items-center justify-between outline-none select-none hover:bg-slate-50 transition-colors">
-                            <div className="flex items-center gap-3">
-                              <span className="w-8 h-8 rounded-xl bg-amber-100 flex items-center justify-center text-amber-600 text-sm shadow-inner">📂</span>
-                              <span className="text-slate-700">{tahapName}</span>
+                          <summary className="font-bold cursor-pointer p-3 sm:p-4 flex items-center justify-between outline-none select-none hover:bg-slate-50 transition-colors">
+                            <div className="flex items-center gap-2 sm:gap-3">
+                              <span className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-amber-100 flex items-center justify-center text-amber-600 text-xs sm:text-sm shadow-inner shrink-0">📂</span>
+                              <span className="text-slate-700 text-sm sm:text-base">{tahapName}</span>
                             </div>
-                            <a href={`https://drive.google.com/drive/search?q=${encodeURIComponent(unitName + ' ' + tahapName)}`} target="_blank" rel="noreferrer" className="p-2 hover:bg-slate-100 rounded-xl transition-colors"><GoogleDriveIcon /></a>
+                            <a href={`https://drive.google.com/drive/search?q=${encodeURIComponent(unitName + ' ' + tahapName)}`} target="_blank" rel="noreferrer" className="p-2 hover:bg-slate-100 rounded-xl transition-colors shrink-0"><GoogleDriveIcon /></a>
                           </summary>
 
-                          <div className="p-4 pt-0 pl-8 sm:pl-14 space-y-5">
+                          <div className="p-3 sm:p-4 pt-0 pl-4 sm:pl-14 space-y-5">
                             {Object.entries(haris).map(([hariName, listRecord]) => (
                               <div key={hariName} className="mt-2">
-                                <div className="flex items-center gap-3 mb-4">
-                                  <span className="text-sm font-bold text-slate-500 bg-slate-50 px-3 py-1 rounded-lg border border-slate-100">📅 {hariName}</span>
-                                  <span className="text-[10px] font-extrabold bg-[#E8F0FE] text-[#1A73E8] px-2.5 py-1 rounded-full uppercase tracking-wider">{listRecord.length} Berkas</span>
+                                
+                                {/* PERBAIKAN BADGE TANGGAL ANTI-PATAH & RESPONSIVE */}
+                                <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-3">
+                                  <span className="text-xs sm:text-sm font-bold text-slate-500 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-100 whitespace-nowrap shadow-sm">📅 {hariName}</span>
+                                  <span className="text-[10px] font-extrabold bg-[#E8F0FE] text-[#1A73E8] px-3 py-1.5 rounded-full uppercase tracking-wider whitespace-nowrap shadow-sm">{listRecord.length} Berkas</span>
                                 </div>
+
+                                {/* PERBAIKAN PADDING TABEL DI MOBILE */}
                                 <div className="overflow-x-auto border border-slate-200 rounded-2xl shadow-sm">
                                   <table className="w-full text-left text-sm text-slate-600 bg-white">
-                                    <thead className="bg-[#F8F9FA] border-b border-slate-200"><tr className="text-xs font-bold text-slate-500 uppercase tracking-wider"><th className="py-4 px-6">Waktu Input</th><th className="py-4 px-6">Nama Berkas (No. SN)</th><th className="py-4 px-6">Petugas</th><th className="py-4 px-6 text-center">Drive Link</th><th className="py-4 px-6 text-right">Aksi</th></tr></thead>
+                                    <thead className="bg-[#F8F9FA] border-b border-slate-200">
+                                      <tr className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                                        <th className="py-3 sm:py-4 px-4 sm:px-6">Waktu Input</th>
+                                        <th className="py-3 sm:py-4 px-4 sm:px-6">Nama Berkas</th>
+                                        <th className="py-3 sm:py-4 px-4 sm:px-6">Petugas</th>
+                                        <th className="py-3 sm:py-4 px-4 sm:px-6 text-center">Drive Link</th>
+                                        <th className="py-3 sm:py-4 px-4 sm:px-6 text-right">Aksi</th>
+                                      </tr>
+                                    </thead>
                                     <tbody className="divide-y divide-slate-100">
                                       {listRecord.map(rec => (
                                         <tr key={rec.id} className="hover:bg-blue-50/30 transition-colors">
-                                          <td className="py-4 px-6 font-mono text-xs text-slate-500">{new Date(rec.timestamp).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</td>
-                                          <td className="py-4 px-6 font-mono font-bold text-slate-800">📄 {rec.formatTampil ? rec.formatTampil : (rec.nomorUrut ? `${rec.nomorUrut}. ${rec.serialNumber}` : rec.serialNumber)}</td>
-                                          <td className="py-4 px-6 font-semibold text-slate-700 uppercase text-xs">{rec.petugas || '-'}</td>
-                                          <td className="py-4 px-6 text-center">
-                                            <a href={rec.driveUrl || `https://drive.google.com/drive/search?q=${encodeURIComponent(rec.serialNumber)}`} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center p-2 hover:bg-blue-100 rounded-xl transition-colors"><GoogleDriveIcon /></a>
+                                          <td className="py-3 sm:py-4 px-4 sm:px-6 font-mono text-[11px] sm:text-xs text-slate-500 whitespace-nowrap">{new Date(rec.timestamp).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</td>
+                                          <td className="py-3 sm:py-4 px-4 sm:px-6 font-mono font-bold text-slate-800 whitespace-nowrap">📄 {rec.formatTampil ? rec.formatTampil : (rec.nomorUrut ? `${rec.nomorUrut}. ${rec.serialNumber}` : rec.serialNumber)}</td>
+                                          <td className="py-3 sm:py-4 px-4 sm:px-6 font-semibold text-slate-700 uppercase text-[11px] sm:text-xs whitespace-nowrap">{rec.petugas || '-'}</td>
+                                          <td className="py-3 sm:py-4 px-4 sm:px-6 text-center">
+                                            <a href={rec.driveUrl || `https://drive.google.com/drive/search?q=${encodeURIComponent(rec.serialNumber)}`} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center p-2 hover:bg-blue-100 rounded-xl transition-colors shrink-0"><GoogleDriveIcon /></a>
                                           </td>
-                                          <td className="py-4 px-6 text-right">
-                                            <button onClick={() => openDeleteModal(rec)} className="bg-red-50 hover:bg-[#EA4335] text-[#EA4335] hover:text-white text-xs font-bold px-4 py-2 rounded-xl transition-all shadow-sm">
+                                          <td className="py-3 sm:py-4 px-4 sm:px-6 text-right">
+                                            <button onClick={() => openDeleteModal(rec)} className="bg-red-50 hover:bg-[#EA4335] text-[#EA4335] hover:text-white text-xs font-bold px-3 sm:px-4 py-2 rounded-xl transition-all shadow-sm">
                                               Hapus
                                             </button>
                                           </td>
@@ -234,6 +245,7 @@ export default function Arsip() {
                                     </tbody>
                                   </table>
                                 </div>
+
                               </div>
                             ))}
                           </div>

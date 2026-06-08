@@ -24,14 +24,15 @@ function PingIndicator() {
     return () => clearInterval(interval);
   }, []);
 
-  if (ping === 'OFFLINE') return (<span className="bg-red-50 text-[#C5221F] px-3 py-1 rounded-full font-mono font-bold flex items-center gap-1.5 border border-red-200 text-[11px]"><span className="w-1.5 h-1.5 bg-[#EA4335] rounded-full animate-ping"></span>OFFLINE</span>);
-  if (ping === 'ERR' || ping === null) return (<span className="bg-slate-100 text-slate-400 px-3 py-1 rounded-full font-mono font-bold flex items-center gap-1.5 border border-slate-200 text-[11px]"><span className="w-1.5 h-1.5 bg-slate-400 rounded-full"></span>-- ms</span>);
+  if (ping === 'OFFLINE') return (<span className="bg-red-50 text-[#C5221F] px-3 py-1 rounded-full font-mono font-bold flex items-center gap-1.5 border border-red-200 text-[11px] whitespace-nowrap"><span className="w-1.5 h-1.5 bg-[#EA4335] rounded-full animate-ping"></span>OFFLINE</span>);
+  if (ping === 'ERR' || ping === null) return (<span className="bg-slate-100 text-slate-400 px-3 py-1 rounded-full font-mono font-bold flex items-center gap-1.5 border border-slate-200 text-[11px] whitespace-nowrap"><span className="w-1.5 h-1.5 bg-slate-400 rounded-full"></span>-- ms</span>);
 
   let badgeStyle = "bg-emerald-50 text-[#137333] border-emerald-200"; let dotStyle = "bg-[#34A853]";
   if (ping > 150 && ping <= 300) { badgeStyle = "bg-amber-50 text-[#B06000] border-amber-200"; dotStyle = "bg-[#FBBC05] animate-pulse"; } 
   else if (ping > 300) { badgeStyle = "bg-red-50 text-[#A50E0E] border-red-200"; dotStyle = "bg-[#EA4335] animate-pulse"; }
 
-  return (<span className={`px-3 py-1 rounded-full font-mono font-black text-[11px] flex items-center gap-1.5 border ${badgeStyle} transition-all shadow-sm`}><span className={`w-1.5 h-1.5 rounded-full ${dotStyle}`}></span>{ping} ms</span>);
+  // Tambahan whitespace-nowrap agar teks tidak turun/jomplang di layar sempit
+  return (<span className={`px-2.5 sm:px-3 py-1 rounded-full font-mono font-black text-[10px] sm:text-[11px] flex items-center gap-1.5 border ${badgeStyle} transition-all shadow-sm whitespace-nowrap`}><span className={`w-1.5 h-1.5 rounded-full ${dotStyle}`}></span>{ping} ms</span>);
 }
 
 export default function Layout({ children }) {
@@ -89,14 +90,14 @@ export default function Layout({ children }) {
   };
 
   const allMenuItems = [
-    { name: 'Dashboard', path: '/dashboard', roles: ['admin', 'supervisor'], icon: <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg> },
-    { name: 'Pemeriksaan', path: '/pemeriksaan', roles: ['pemeriksa'], icon: <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9zM15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg> },
-    { name: 'Laporan Data', path: '/laporan', roles: ['admin', 'supervisor'], icon: <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg> },
-    { name: 'Folder Arsip', path: '/arsip', roles: ['admin', 'supervisor'], icon: <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9a2 2 0 00-2 2v5a2 2 0 01-2 2z" /></svg> },
-    { name: 'Peralatan', path: '/peralatan', roles: ['admin'], icon: <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /></svg> },
-    { name: 'Pembelian', path: '/pembelian', roles: ['admin'], icon: <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" /></svg> },
-    { name: 'Konfigurasi', path: '/admin', roles: ['admin'], icon: <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg> },
-    { name: 'Audit Log', path: '/audit', roles: ['admin'], icon: <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg> }
+    { name: 'Dashboard', path: '/dashboard', roles: ['admin', 'supervisor'], icon: <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg> },
+    { name: 'Pemeriksaan', path: '/pemeriksaan', roles: ['pemeriksa'], icon: <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9zM15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg> },
+    { name: 'Laporan Data', path: '/laporan', roles: ['admin', 'supervisor'], icon: <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg> },
+    { name: 'Folder Arsip', path: '/arsip', roles: ['admin', 'supervisor'], icon: <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9a2 2 0 00-2 2v5a2 2 0 01-2 2z" /></svg> },
+    { name: 'Peralatan', path: '/peralatan', roles: ['admin'], icon: <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /></svg> },
+    { name: 'Pembelian', path: '/pembelian', roles: ['admin'], icon: <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" /></svg> },
+    { name: 'Konfigurasi', path: '/admin', roles: ['admin'], icon: <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg> },
+    { name: 'Audit Log', path: '/audit', roles: ['admin'], icon: <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg> }
   ];
 
   const menuItems = allMenuItems.filter(item => user && item.roles.includes(user.role));
@@ -148,7 +149,6 @@ export default function Layout({ children }) {
       <div className="flex flex-1 overflow-hidden relative">
         <aside className="hidden md:flex flex-col w-64 shrink-0 bg-white border-r border-slate-200 shadow-[2px_0_8px_-4px_rgba(0,0,0,0.05)] z-20">
           
-          {/* HEADER SIDEBAR DESKTOP DENGAN LOGO BARU */}
           <div className="h-16 flex items-center gap-3 px-6 border-b border-slate-100">
             <img src="/logo-192.png" alt="Logo SIP" className="w-8 h-8 object-contain drop-shadow-sm" />
             <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">SIP</h1>
@@ -173,15 +173,14 @@ export default function Layout({ children }) {
         </aside>
 
         <main className="flex-1 h-full overflow-y-auto relative w-full flex flex-col">
-          <div className="h-14 bg-white border-b border-slate-200 px-4 md:px-8 flex items-center justify-between md:justify-end gap-3 shrink-0">
+          <div className="h-14 bg-white border-b border-slate-200 px-3 sm:px-8 flex items-center justify-between md:justify-end gap-2 shrink-0">
             
-            {/* HEADER MOBILE DENGAN LOGO BARU */}
             <div className="md:hidden flex items-center gap-2">
               <img src="/logo-192.png" alt="Logo SIP" className="w-6 h-6 object-contain" />
               <span className="text-sm font-extrabold text-blue-600 tracking-tight">SIP</span>
             </div>
 
-            <div className="flex items-center gap-2.5 text-xs font-semibold">
+            <div className="flex items-center gap-1.5 sm:gap-2.5 text-xs font-semibold">
               <PingIndicator />
               
               <button 
@@ -194,23 +193,33 @@ export default function Layout({ children }) {
                 </svg>
               </button>
 
-              <span className="bg-slate-100 text-slate-600 px-3 py-1.5 rounded-full uppercase tracking-wider border border-slate-200 shadow-sm flex items-center gap-1.5">
-                <span className="text-[10px] text-slate-400">User:</span>
+              <span className="bg-slate-100 text-slate-600 px-2 sm:px-3 py-1.5 rounded-full uppercase tracking-wider border border-slate-200 shadow-sm flex items-center gap-1.5 whitespace-nowrap">
+                <span className="text-[10px] text-slate-400 hidden sm:inline">User:</span>
                 <span className="text-[#1A73E8] font-black">{user?.username}</span>
               </span>
-              <button onClick={() => setShowLogoutModal(true)} className="md:hidden text-red-600 font-bold px-3 py-1.5 bg-red-50 hover:bg-red-100 rounded-lg transition-colors">Keluar</button>
+              
+              {/* TOMBOL KELUAR DIUBAH JADI IKON SAJA DI HP BIAR MINIMALIS */}
+              <button 
+                onClick={() => setShowLogoutModal(true)} 
+                className="md:hidden text-red-600 p-1.5 sm:p-2 bg-red-50 hover:bg-red-100 rounded-lg transition-colors border border-red-100 shadow-sm"
+                title="Keluar Sesi"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
+              </button>
             </div>
           </div>
           <div className="flex-1 overflow-y-auto w-full max-w-7xl mx-auto p-4 md:p-8 pb-24 md:pb-8">{children}</div>
         </main>
 
-        <nav className="md:hidden fixed bottom-0 left-0 w-full bg-white border-t border-slate-200 flex justify-around items-center h-16 px-2 z-50 shadow-[0_-4px_12px_rgba(0,0,0,0.02)]">
+        {/* BOTTOM NAV BAR DIBERSIHKAN DARI TEKS */}
+        <nav className="md:hidden fixed bottom-0 left-0 w-full bg-white border-t border-slate-200 flex justify-around items-center h-14 px-2 z-50 shadow-[0_-4px_12px_rgba(0,0,0,0.02)]">
           {menuItems.map((item) => {
             const isActive = location.pathname.includes(item.path);
             return (
-              <Link key={item.name} to={item.path} className={`flex flex-col items-center justify-center w-full h-full transition-colors ${isActive ? 'text-blue-600' : 'text-slate-400'}`}>
-                <div className={`mb-1 transition-transform duration-200 ${isActive ? 'transform -translate-y-0.5 text-blue-600' : ''}`}>{item.icon}</div>
-                <span className={`text-[10px] tracking-wide ${isActive ? 'font-bold' : 'font-medium'}`}>{item.name}</span>
+              <Link key={item.name} to={item.path} title={item.name} className={`flex items-center justify-center w-full h-full transition-colors ${isActive ? 'text-[#1A73E8]' : 'text-slate-400 hover:text-slate-600'}`}>
+                <div className={`transition-all duration-300 ${isActive ? 'transform -translate-y-1 scale-125 drop-shadow-md' : 'scale-110'}`}>
+                  {item.icon}
+                </div>
               </Link>
             );
           })}

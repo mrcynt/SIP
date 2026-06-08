@@ -138,9 +138,7 @@ export default function Dashboard() {
           <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Dashboard Kinerja</h1>
           <p className="text-slate-500 mt-1">Pantau progres per-kategori secara spesifik.</p>
         </div>
-        <button onClick={fetchDashboardData} className="px-4 py-2 bg-white border border-slate-200 text-[#4285F4] rounded-full text-sm font-bold shadow-sm hover:shadow-md transition-all">
-          🔄 Segarkan
-        </button>
+        
       </div>
 
       {isLoading ? (

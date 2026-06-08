@@ -50,7 +50,7 @@ export default function Peralatan() {
   // BUKA MODAL PAKAI BARANG (KECIL & INSTAN)
   const openPakaiModal = (alat) => {
     setJumlahPakai('');
-    setEditForm({ namaBarang: alat.namaBarang, stok: alat.stok, satuan: alat.satuan }); // Simpan stok saat ini untuk kalkulasi
+    setEditForm({ namaBarang: alat.namaBarang, stok: alat.stok, satuan: alat.satuan }); 
     setModal({ isOpen: true, type: 'custom', action: 'pakai', title: 'Catat Pemakaian Barang', message: '', targetId: alat.id, targetName: alat.namaBarang, isDestructive: false });
   };
 
@@ -149,7 +149,7 @@ export default function Peralatan() {
       <div className="mb-8"><h1 className="text-3xl font-bold text-slate-900 tracking-tight">Peralatan Pemeriksaan</h1></div>
       
       <div className="bg-white rounded-3xl shadow-[0_4px_24px_rgba(0,0,0,0.04)] border border-slate-50 overflow-hidden">
-        <div className="p-6 md:p-8 bg-slate-50 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div className="p-4 sm:p-6 md:p-8 bg-slate-50 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <h2 className="text-xl font-bold text-slate-800">🧰 Inventory Gudang</h2>
           <div className="flex gap-2 w-full sm:w-auto">
             <button onClick={()=>exportData('excel')} className="flex-1 sm:flex-none justify-center bg-white border border-slate-200 hover:border-green-500 hover:bg-green-50 text-green-700 px-5 py-2.5 rounded-xl text-sm font-bold shadow-sm flex items-center gap-2 transition-all">📊 Excel</button>
@@ -157,12 +157,16 @@ export default function Peralatan() {
           </div>
         </div>
 
-        <div className="p-6 md:p-8">
+        <div className="p-4 sm:p-6 md:p-8">
+          
+          {/* PERBAIKAN FORM RESPONSIVE */}
           <form onSubmit={handleAddPeralatan} className="flex flex-col md:flex-row gap-3 mb-8 pb-8 border-b border-slate-100">
             <input type="text" value={newAlatNama} onChange={e=>setNewAlatNama(e.target.value)} placeholder="Nama Barang" className="flex-1 px-5 py-3.5 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:border-[#4285F4] focus:ring-2 focus:ring-blue-100 shadow-sm" required />
-            <input type="number" value={newAlatStok} onChange={e=>setNewAlatStok(e.target.value)} placeholder="Jumlah" className="w-full md:w-32 px-5 py-3.5 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:border-[#4285F4] focus:ring-2 focus:ring-blue-100 shadow-sm" min="0" required />
-            <input type="text" value={newAlatSatuan} onChange={e=>setNewAlatSatuan(e.target.value)} placeholder="Satuan (Pcs, Box)" className="w-full md:w-48 px-5 py-3.5 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:border-[#4285F4] focus:ring-2 focus:ring-blue-100 shadow-sm" required />
-            <button type="submit" className="bg-[#1A73E8] hover:bg-[#1557B0] text-white font-bold text-sm px-6 py-3.5 rounded-xl shadow-md transition-all">Tambah Data</button>
+            <div className="flex gap-3 w-full md:w-auto">
+              <input type="number" value={newAlatStok} onChange={e=>setNewAlatStok(e.target.value)} placeholder="Jumlah" className="flex-1 md:w-32 px-5 py-3.5 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:border-[#4285F4] focus:ring-2 focus:ring-blue-100 shadow-sm" min="0" required />
+              <input type="text" value={newAlatSatuan} onChange={e=>setNewAlatSatuan(e.target.value)} placeholder="Satuan" className="flex-1 md:w-40 px-5 py-3.5 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:border-[#4285F4] focus:ring-2 focus:ring-blue-100 shadow-sm" required />
+            </div>
+            <button type="submit" className="w-full md:w-auto bg-[#1A73E8] hover:bg-[#1557B0] text-white font-bold text-sm px-6 py-3.5 rounded-xl shadow-md transition-all shrink-0">Tambah Data</button>
           </form>
 
           {isLoading ? <div className="text-center text-[#4285F4] font-medium py-10 animate-pulse">Memuat Inventory...</div> : (
@@ -170,28 +174,33 @@ export default function Peralatan() {
               <table className="w-full text-left text-sm text-slate-600 bg-white">
                 <thead className="bg-[#F8F9FA] border-b border-slate-200">
                   <tr className="text-xs font-extrabold text-slate-500 uppercase tracking-wider">
-                    <th className="py-4 px-6">Nama Peralatan</th><th className="py-4 px-6 text-center w-40">Stok & Satuan</th><th className="py-4 px-6 text-right w-56">Aksi</th>
+                    <th className="py-4 px-4 sm:px-6">Nama Peralatan</th>
+                    <th className="py-4 px-4 sm:px-6 text-center w-32 sm:w-40">Stok</th>
+                    <th className="py-4 px-4 sm:px-6 text-right w-40 sm:w-56">Aksi</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {peralatanList.map(alat => (
                     <tr key={alat.id} className="hover:bg-blue-50/20 transition-colors">
-                      <td className="py-4 px-6 font-extrabold text-slate-800">{alat.namaBarang}</td>
-                      <td className="py-4 px-6 text-center">
-                        <span className={`px-4 py-1.5 rounded-full font-mono font-bold border shadow-sm ${alat.stok <= 5 ? 'bg-red-50 text-red-600 border-red-200' : 'bg-emerald-50 text-emerald-600 border-emerald-200'}`}>
-                          {alat.stok} <span className="text-xs ml-1 font-sans font-semibold">{alat.satuan}</span>
+                      <td className="py-4 px-4 sm:px-6 font-extrabold text-slate-800">{alat.namaBarang}</td>
+                      <td className="py-4 px-4 sm:px-6 text-center">
+                        
+                        {/* PERBAIKAN STOK RESPONSIVE ANTI PATAH */}
+                        <span className={`inline-block whitespace-nowrap px-3 sm:px-4 py-1.5 rounded-full font-mono font-bold border shadow-sm text-[11px] sm:text-sm ${alat.stok <= 5 ? 'bg-red-50 text-red-600 border-red-200' : 'bg-emerald-50 text-emerald-600 border-emerald-200'}`}>
+                          {alat.stok} <span className="font-sans font-semibold ml-0.5">{alat.satuan}</span>
                         </span>
                       </td>
-                      <td className="py-4 px-6 text-right">
-                        <div className="flex justify-end gap-1.5">
-                          {/* TOMBOL "PAKAI" BARU: UKURAN COMPACT, WARNA AMBER/ORANGE HANGAT */}
-                          <button onClick={() => openPakaiModal(alat)} className="text-[#B06000] hover:text-white font-bold text-xs bg-amber-50 hover:bg-[#FBBC05] px-3 py-2 rounded-xl transition-all shadow-sm">
+                      
+                      <td className="py-4 px-4 sm:px-6 text-right">
+                        {/* PERBAIKAN TOMBOL AKSI MELIPAT DI HP */}
+                        <div className="flex justify-end flex-wrap gap-1.5 w-full">
+                          <button onClick={() => openPakaiModal(alat)} className="text-[#B06000] hover:text-white font-bold text-xs bg-amber-50 hover:bg-[#FBBC05] px-2.5 sm:px-3 py-2 rounded-xl transition-all shadow-sm">
                             🤝 Pakai
                           </button>
-                          <button onClick={() => openEditModal(alat)} className="text-[#1A73E8] hover:text-white font-bold text-xs bg-[#E8F0FE] hover:bg-[#1A73E8] px-3 py-2 rounded-xl transition-all shadow-sm">
+                          <button onClick={() => openEditModal(alat)} className="text-[#1A73E8] hover:text-white font-bold text-xs bg-[#E8F0FE] hover:bg-[#1A73E8] px-2.5 sm:px-3 py-2 rounded-xl transition-all shadow-sm">
                             Edit
                           </button>
-                          <button onClick={() => openDeleteModal(alat.id, alat.namaBarang)} className="text-[#EA4335] hover:text-white font-bold text-xs bg-[#FCE8E6] hover:bg-[#EA4335] px-3 py-2 rounded-xl transition-all shadow-sm">
+                          <button onClick={() => openDeleteModal(alat.id, alat.namaBarang)} className="text-[#EA4335] hover:text-white font-bold text-xs bg-[#FCE8E6] hover:bg-[#EA4335] px-2.5 sm:px-3 py-2 rounded-xl transition-all shadow-sm">
                             Hapus
                           </button>
                         </div>
