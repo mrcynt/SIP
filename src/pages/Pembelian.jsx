@@ -13,12 +13,15 @@ export default function Pembelian() {
   const [pembelianList, setPembelianList] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
 
+  // TAB NAVIGASI BARU
+  const [activeTab, setActiveTab] = useState('Rencana');
+
   // Form Input
   const [newBeliNama, setNewBeliNama] = useState('');
   const [newBeliJumlah, setNewBeliJumlah] = useState('');
   const [newBeliSatuan, setNewBeliSatuan] = useState('');
 
-  // FILTER STATE BARU
+  // FILTER STATE
   const [searchTerm, setSearchTerm] = useState('');
   const [filterDate, setFilterDate] = useState('');
 
@@ -41,6 +44,7 @@ export default function Pembelian() {
     await addDoc(collection(db, 'pembelian'), { namaBarang: newBeliNama.trim().toUpperCase(), jumlah: parseInt(newBeliJumlah, 10), satuan: newBeliSatuan.trim(), status: 'Rencana', timestamp: new Date().toISOString() });
     logActivity(user.username, `Rencana pembelian: ${newBeliNama}`);
     setNewBeliNama(''); setNewBeliJumlah(''); setNewBeliSatuan(''); fetchData();
+    setActiveTab('Rencana'); // Pindah otomatis ke tab rencana jika input baru
   };
 
   const openSelesaiModal = (beli) => { setModal({ isOpen: true, action: 'selesai', title: 'Selesaikan Pembelian?', message: `Tandai ${beli.namaBarang} sebagai Diterima? Barang akan otomatis ditransfer ke stok peralatan.`, targetId: beli.id, targetName: beli.namaBarang, targetData: beli, isDestructive: false }); };
@@ -76,9 +80,10 @@ export default function Pembelian() {
     fetchData();
   };
 
-  // LOGIKA FILTER
+  // LOGIKA FILTER DENGAN TAB AKTIF
   const getFilteredPembelian = () => {
     return pembelianList.filter(beli => {
+      const matchTab = beli.status === activeTab;
       const matchSearch = beli.namaBarang.toLowerCase().includes(searchTerm.toLowerCase());
       let matchDate = true;
       if (filterDate) {
@@ -89,26 +94,30 @@ export default function Pembelian() {
         const formatted = `${bYear}-${bMonth}-${bDay}`;
         matchDate = formatted === filterDate;
       }
-      return matchSearch && matchDate;
+      return matchTab && matchSearch && matchDate;
     });
   };
 
   const exportData = (type) => {
     const dataArray = getFilteredPembelian();
-    if (dataArray.length === 0) return alert("Tidak ada data untuk diekspor!");
+    if (dataArray.length === 0) return alert(`Tidak ada data di tab ${activeTab === 'Rencana' ? 'Proses Pengajuan' : 'Selesai Dibeli'} untuk diekspor!`);
     const rows = dataArray.map((rec, i) => [ i + 1, new Date(rec.timestamp).toLocaleDateString('id-ID'), rec.namaBarang, `${rec.jumlah} ${rec.satuan}`, rec.status ]);
     
+    // Nama file disesuaikan dengan tab yang sedang aktif
+    const fileName = `Laporan_Pembelian_${activeTab}_${Date.now()}`;
+    const reportTitle = activeTab === 'Rencana' ? "Laporan Rencana Proses Pengajuan" : "Laporan Realisasi Pembelian Selesai";
+
     if (type === 'excel') {
       const dataExcel = dataArray.map((rec, i) => ({ "No": i + 1, "Tanggal": new Date(rec.timestamp).toLocaleDateString('id-ID'), "Nama Barang": rec.namaBarang, "Jumlah": rec.jumlah, "Satuan": rec.satuan, "Status": rec.status }));
       const ws = XLSX.utils.json_to_sheet(dataExcel);
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Pembelian");
-      XLSX.writeFile(wb, `Laporan_Pembelian_${Date.now()}.xlsx`);
+      XLSX.writeFile(wb, `${fileName}.xlsx`);
     } else {
       const docPdf = new jsPDF();
-      docPdf.text("Laporan Rencana & Realisasi Pembelian", 14, 15);
+      docPdf.text(reportTitle, 14, 15);
       autoTable(docPdf, { head: [["No", "Tanggal Pengajuan", "Nama Barang", "Jumlah & Satuan", "Status Logistik"]], body: rows, startY: 25, headStyles: { fillColor: [30, 41, 59] } });
-      docPdf.save(`Laporan_Pembelian_${Date.now()}.pdf`);
+      docPdf.save(`${fileName}.pdf`);
     }
   };
 
@@ -162,6 +171,22 @@ export default function Pembelian() {
             </form>
           </div>
 
+          {/* TAB NAVIGASI */}
+          <div className="flex space-x-2 p-1.5 bg-slate-100 rounded-2xl mb-6 overflow-x-auto w-full md:w-fit scrollbar-hide border border-slate-200">
+            <button 
+              onClick={() => setActiveTab('Rencana')} 
+              className={`px-6 py-2.5 text-sm font-bold rounded-xl transition-all whitespace-nowrap ${activeTab === 'Rencana' ? 'bg-white text-[#1A73E8] shadow-sm' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-200/50'}`}
+            >
+              📝 Proses Pengajuan
+            </button>
+            <button 
+              onClick={() => setActiveTab('Selesai')} 
+              className={`px-6 py-2.5 text-sm font-bold rounded-xl transition-all whitespace-nowrap ${activeTab === 'Selesai' ? 'bg-white text-[#34A853] shadow-sm' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-200/50'}`}
+            >
+              ✅ Selesai Dibeli
+            </button>
+          </div>
+
           {isLoading ? <p className="text-center text-blue-500 py-10 animate-pulse font-medium">Memuat data...</p> : (
             <div className="overflow-x-auto border border-slate-200 rounded-2xl shadow-sm">
               <table className="w-full text-left text-sm text-slate-600 bg-white">
@@ -194,7 +219,7 @@ export default function Pembelian() {
                       </td>
                     </tr>
                   ))}
-                  {filteredList.length === 0 && <tr><td colSpan="5" className="py-12 text-center text-slate-400">Tidak ada data yang sesuai.</td></tr>}
+                  {filteredList.length === 0 && <tr><td colSpan="5" className="py-12 text-center text-slate-400">Tidak ada data di tab ini.</td></tr>}
                 </tbody>
               </table>
             </div>
