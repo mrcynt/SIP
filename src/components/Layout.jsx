@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { processSyncQueue } from '../utils/syncManager'; 
 import { dbLocal } from '../db/offlineDB'; 
-import Modal from './Modal'; // <-- IMPORT COMPONENT MODAL (Berada di folder yang sama)
+import Modal from './Modal'; 
 
 function PingIndicator() {
   const [ping, setPing] = useState(null);
@@ -48,7 +48,6 @@ export default function Layout({ children }) {
 
   const [isRefreshing, setIsRefreshing] = useState(false);
   
-  // STATE BARU: KONTROL POP-UP KONFIRMASI LOGOUT
   const [showLogoutModal, setShowLogoutModal] = useState(false);
 
   useEffect(() => { document.documentElement.classList.remove('dark'); }, []);
@@ -83,7 +82,6 @@ export default function Layout({ children }) {
     setTimeout(() => { window.location.reload(); }, 400);
   };
 
-  // FUNGSI EKSEKUSI KELUAR SESI SETELAH DIKONFIRMASI DI DIALOG MODAL
   const handleExecuteLogout = () => {
     setShowLogoutModal(false);
     logout();
@@ -149,10 +147,13 @@ export default function Layout({ children }) {
 
       <div className="flex flex-1 overflow-hidden relative">
         <aside className="hidden md:flex flex-col w-64 shrink-0 bg-white border-r border-slate-200 shadow-[2px_0_8px_-4px_rgba(0,0,0,0.05)] z-20">
+          
+          {/* HEADER SIDEBAR DESKTOP DENGAN LOGO BARU */}
           <div className="h-16 flex items-center gap-3 px-6 border-b border-slate-100">
-            <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white font-bold text-lg shadow-sm">S</div>
+            <img src="/logo-192.png" alt="Logo SIP" className="w-8 h-8 object-contain drop-shadow-sm" />
             <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">SIP</h1>
           </div>
+
           <nav className="flex-1 px-4 py-6 space-y-1.5 overflow-y-auto">
             {menuItems.map((item) => {
               const isActive = location.pathname.includes(item.path);
@@ -165,7 +166,6 @@ export default function Layout({ children }) {
             })}
           </nav>
           <div className="p-4 border-t border-slate-100">
-            {/* Ubah onClick ke pemicu modal */}
             <button onClick={() => setShowLogoutModal(true)} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-red-600 hover:bg-red-50 font-semibold text-sm transition-colors">
               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg> Keluar Sesi
             </button>
@@ -174,7 +174,13 @@ export default function Layout({ children }) {
 
         <main className="flex-1 h-full overflow-y-auto relative w-full flex flex-col">
           <div className="h-14 bg-white border-b border-slate-200 px-4 md:px-8 flex items-center justify-between md:justify-end gap-3 shrink-0">
-            <div className="md:hidden flex items-center gap-2"><span className="text-sm font-extrabold text-blue-600 tracking-tight">SIP</span></div>
+            
+            {/* HEADER MOBILE DENGAN LOGO BARU */}
+            <div className="md:hidden flex items-center gap-2">
+              <img src="/logo-192.png" alt="Logo SIP" className="w-6 h-6 object-contain" />
+              <span className="text-sm font-extrabold text-blue-600 tracking-tight">SIP</span>
+            </div>
+
             <div className="flex items-center gap-2.5 text-xs font-semibold">
               <PingIndicator />
               
@@ -192,7 +198,6 @@ export default function Layout({ children }) {
                 <span className="text-[10px] text-slate-400">User:</span>
                 <span className="text-[#1A73E8] font-black">{user?.username}</span>
               </span>
-              {/* Ubah onClick versi HP ke pemicu modal */}
               <button onClick={() => setShowLogoutModal(true)} className="md:hidden text-red-600 font-bold px-3 py-1.5 bg-red-50 hover:bg-red-100 rounded-lg transition-colors">Keluar</button>
             </div>
           </div>
