@@ -133,7 +133,7 @@ export default function Layout({ children }) {
             <div className="p-5 sm:p-6 bg-white border-t border-slate-100 flex flex-col gap-3 shrink-0">
               <p className="text-xs font-bold text-slate-500 text-center">Butuh panduan yang lebih detail beserta gambar?</p>
               <a 
-                href="/Panduan_SIP.pdf" 
+                href="https://drive.google.com/file/d/1i4NbzIfmjyGYgWf18PLQ_08pMDGCe2Z-/view?usp=sharing" 
                 target="_blank" 
                 rel="noopener noreferrer" 
                 className="w-full py-4 bg-slate-900 hover:bg-black text-white text-sm font-bold rounded-xl flex items-center justify-center gap-2 transition-all shadow-md active:scale-95"
