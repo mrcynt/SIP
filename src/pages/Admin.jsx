@@ -17,7 +17,6 @@ export default function Admin() {
   const [unitGrandTotals, setUnitGrandTotals] = useState({});
   const [absensiList, setAbsensiList] = useState([]); 
   
-  // STATE MASTER DOKUMENTASI WAJIB
   const [dokItems, setDokItems] = useState([]);
   const [newDokName, setNewDokName] = useState('');
   const [newDokUnit, setNewDokUnit] = useState('');
@@ -52,7 +51,11 @@ export default function Admin() {
       const gt = {}; unitData.forEach(u => gt[u.id] = u.grandTotal || 0); setUnitGrandTotals(gt);
       
       const tahapSnap = await getDocs(collection(db, 'master_tahaps'));
-      setTahaps(tahapSnap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => a.name.localeCompare(b.name)));
+      // FIX SORTING NUMERIK: Tahap 1, 2, ..., 10, 11
+      const sortedTahaps = tahapSnap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .sort((a,b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+      setTahaps(sortedTahaps);
 
       if (activeTab === 'users' || activeTab === 'assignments') {
         const userSnap = await getDocs(collection(db, 'users'));
@@ -143,7 +146,7 @@ export default function Admin() {
 
       <div className="flex space-x-2 p-1.5 bg-slate-200/50 rounded-2xl mb-8 overflow-x-auto w-full lg:w-fit scrollbar-hide border border-slate-100">
         {['master', 'dokumentasi', 'targets', 'users', 'assignments', 'settings'].map(tab => (
-          <button key={tab} onClick={() => setActiveTab(tab)} className={`px-6 py-2.5 text-sm font-bold rounded-xl transition-all capitalize whitespace-nowrap ${activeTab === tab ? 'bg-white text-[#1A73E8] shadow-sm' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-200/50'}`}>
+          <button key={tab} onClick={() => setActiveTab(tab)} className={`px-6 py-2.5 text-sm font-bold rounded-xl transition-all capitalize whitespace-nowrap ${activeTab === tab ? 'bg-white text-[#1A73E8] shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>
             {tab === 'master' ? 'Master Kategori' : tab === 'dokumentasi' ? 'Dokumentasi Wajib' : tab === 'targets' ? 'Target & KPI' : tab === 'users' ? 'Akun Login' : tab === 'assignments' ? 'Penugasan Lapangan' : '⚙️ Sistem'}
           </button>
         ))}
@@ -159,11 +162,9 @@ export default function Admin() {
              </div>
           )}
 
-          {/* TAB DOKUMENTASI WAJIB (CARD LIST PER UNIT) */}
           {activeTab === 'dokumentasi' && (
              <div className="bg-white p-6 md:p-8 rounded-3xl border border-slate-100 shadow-[0_4px_24px_rgba(0,0,0,0.04)]">
                <div className="mb-6"><h2 className="text-xl font-bold text-slate-900 mb-1 flex items-center gap-2"><span className="text-2xl">📸</span> Master Dokumentasi Wajib</h2><p className="text-slate-500 text-sm">Tambahkan daftar foto yang wajib diunggah oleh petugas lapangan berdasarkan Kategori Unit.</p></div>
-               
                <form onSubmit={handleAddDokItem} className="grid grid-cols-1 sm:grid-cols-4 gap-3 mb-8 bg-slate-50 p-5 rounded-2xl border border-slate-100">
                  <select value={newDokUnit} onChange={e=>setNewDokUnit(e.target.value)} className="px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-[#4285F4] font-medium cursor-pointer" required>
                    <option value="">Pilih Kategori Unit...</option>
@@ -172,7 +173,6 @@ export default function Admin() {
                  <input type="text" value={newDokName} onChange={e=>setNewDokName(e.target.value)} placeholder="Nama Kategori Foto (misal: Tampak Depan)" className="sm:col-span-2 px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-[#4285F4] transition-all font-bold text-slate-800" required/>
                  <button className="bg-[#1A73E8] hover:bg-[#1557B0] text-white py-3.5 sm:py-0 px-6 rounded-xl text-sm font-bold transition-colors shadow-sm">Tambah Foto Wajib</button>
                </form>
-
                <div className="space-y-4">
                  {units.map(unit => {
                    const doksInUnit = dokItems.filter(d => d.unit === unit.name);
@@ -223,7 +223,7 @@ export default function Admin() {
           )}
 
           {activeTab === 'settings' && (
-            <div className="bg-white p-6 md:p-8 rounded-3xl border border-slate-100 shadow-[0_4px_24px_rgba(0,0,0,0.04)] max-w-3xl"><div className="mb-8 border-b border-slate-100 pb-6"><h2 className="text-xl font-bold text-slate-900 mb-2 flex items-center gap-2"><span className="text-2xl">🔗</span> Integrasi Google Drive</h2><p className="text-sm text-slate-500 leading-relaxed">Masukkan tautan (URL) Deployment dari Google Apps Script untuk menghubungkan aplikasi ini dengan akun Google Drive.</p></div><form onSubmit={handleSaveSettings} className="space-y-5"><div><label className="text-xs font-bold text-slate-500 uppercase ml-1">URL Google Apps Script (API Web App)</label><input type="url" value={driveApiUrl} onChange={(e) => setDriveApiUrl(e.target.value)} placeholder="https://script.google.com/macros/s/.../exec" className="w-full mt-2 px-5 py-4 bg-[#F8F9FA] border border-slate-200 rounded-xl text-sm outline-none focus:bg-white focus:border-[#4285F4] focus:ring-4 focus:ring-blue-50 transition-all font-mono font-medium text-slate-800" required /></div><div className="pt-4 flex justify-end"><button type="submit" className="bg-[#1A73E8] hover:bg-[#1557B0] text-white font-bold text-sm px-8 py-3.5 rounded-xl transition-all shadow-md">Simpan Pengaturan</button></div></form></div>
+             <div className="bg-white p-6 md:p-8 rounded-3xl border border-slate-100 shadow-[0_4px_24px_rgba(0,0,0,0.04)] max-w-3xl"><div className="mb-8 border-b border-slate-100 pb-6"><h2 className="text-xl font-bold text-slate-900 mb-2 flex items-center gap-2"><span className="text-2xl">🔗</span> Integrasi Google Drive</h2><p className="text-sm text-slate-500 leading-relaxed">Masukkan tautan (URL) Deployment dari Google Apps Script untuk menghubungkan aplikasi ini dengan akun Google Drive.</p></div><form onSubmit={handleSaveSettings} className="space-y-5"><div><label className="text-xs font-bold text-slate-500 uppercase ml-1">URL Google Apps Script (API Web App)</label><input type="url" value={driveApiUrl} onChange={(e) => setDriveApiUrl(e.target.value)} placeholder="https://script.google.com/macros/s/.../exec" className="w-full mt-2 px-5 py-4 bg-[#F8F9FA] border border-slate-200 rounded-xl text-sm outline-none focus:bg-white focus:border-[#4285F4] focus:ring-4 focus:ring-blue-50 transition-all font-mono font-medium text-slate-800" required /></div><div className="pt-4 flex justify-end"><button type="submit" className="bg-[#1A73E8] hover:bg-[#1557B0] text-white font-bold text-sm px-8 py-3.5 rounded-xl transition-all shadow-md">Simpan Pengaturan</button></div></form></div>
           )}
 
         </div>

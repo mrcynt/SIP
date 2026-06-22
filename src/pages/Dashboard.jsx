@@ -127,7 +127,6 @@ export default function Dashboard() {
 
         const unitTargets = targetsData.filter(t => t.unit === unit.name);
         const listTahap = unitTargets.map(tahapTarget => {
-          // Memaksa Target Tahap dibaca sebagai Angka Mutlak untuk grafik batang
           const baseTarget = Number(tahapTarget.jumlah) || 0;
           
           let selesaiTahap = 0;
@@ -142,7 +141,8 @@ export default function Dashboard() {
           };
         });
 
-        listTahap.sort((a, b) => a.namaTahap.localeCompare(b.namaTahap));
+        // BUG FIX: Mengurutkan secara Numerik Natural (Tahap 10 akan di atas Tahap 2)
+        listTahap.sort((a, b) => a.namaTahap.localeCompare(b.namaTahap, undefined, { numeric: true, sensitivity: 'base' }));
 
         return { 
           unitName: unit.name,
@@ -348,7 +348,7 @@ export default function Dashboard() {
                                <h3 className="text-2xl font-black text-[#C5221F] mt-1">{unitData.totalError.toLocaleString('id-ID')}</h3>
                              </div>
                              <div className="bg-[#F3E8FD]/50 p-4 rounded-2xl border border-[#E9D5FF] flex flex-col justify-center shadow-sm">
-                               <p className="text-[10px] font-extrabold text-[#7E22CE] uppercase tracking-widest">IFP PENGGANTI</p>
+                               <p className="text-[10px] font-extrabold text-[#7E22CE] uppercase tracking-widest">Wajib Pengganti</p>
                                <h3 className="text-2xl font-black text-[#7E22CE] mt-1">{unitData.totalPengganti.toLocaleString('id-ID')}</h3>
                              </div>
                            </div>
@@ -393,7 +393,6 @@ export default function Dashboard() {
                             <YAxis tick={{fontSize: 10, fill: '#64748B'}} axisLine={false} tickLine={false} />
                             <RechartsTooltip cursor={{fill: '#F8F9FA'}} contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', fontSize: '12px'}} />
                             
-                            {/* Bar Target dengan Warna Dinamis Unit & Angka Target Absolut */}
                             <Bar dataKey="baseTarget" name="Total Target" fill={unitData.color} radius={[6, 6, 0, 0]} maxBarSize={90}>
                               <LabelList dataKey="baseTarget" position="top" style={{ fontSize: '11px', fill: unitData.color, fontWeight: '900' }} />
                             </Bar>
