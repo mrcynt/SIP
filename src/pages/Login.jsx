@@ -29,18 +29,18 @@ export default function Login() {
     try {
       const unameStr = username.trim().toLowerCase();
       
-      // 1. Inisialisasi Akun Admin Default (Sesuai Spesifikasi: admin / 12345)
+      // 1. Inisialisasi Akun Admin Default
       if (unameStr === 'admin') {
         const adminRef = doc(db, 'users', 'admin_default');
         const adminSnap = await getDoc(adminRef);
         
-        // Jika admin belum pernah ada di database, kita buatkan otomatis
         if (!adminSnap.exists()) {
           await setDoc(adminRef, {
             username: 'admin',
             password: '12345',
             role: 'admin',
-            isFirstLogin: true
+            isFirstLogin: true,
+            isActive: true // Pastikan admin default selalu aktif
           });
         }
       }
@@ -65,7 +65,15 @@ export default function Login() {
         return;
       }
 
-      // 4. Cek Apakah Wajib Ganti Password (Login Pertama)
+      // 4. PENGECEKAN STATUS SUSPEND (Gembok Sakti)
+      // Kalau isActive bernilai false, jangan boleh masuk!
+      if (userData.isActive === false) {
+        setError('Akses Ditolak: Akun Anda saat ini ditangguhkan (SUSPEND). Hubungi Admin jika ini adalah kesalahan.');
+        setIsLoading(false);
+        return;
+      }
+
+      // 5. Cek Apakah Wajib Ganti Password (Login Pertama)
       if (userData.isFirstLogin || userData.password === '12345') {
         setUserIdToUpdate(userDoc.id);
         setUserDataTemp(userData);
@@ -74,7 +82,7 @@ export default function Login() {
         return;
       }
 
-      // 5. Jika aman, langsung masuk
+      // 6. Jika aman, langsung masuk
       jalankanSesiLogin(userData);
 
     } catch (err) {
@@ -101,13 +109,11 @@ export default function Login() {
 
     setIsLoading(true);
     try {
-      // Update password di database dan hilangkan status first login
       await updateDoc(doc(db, 'users', userIdToUpdate), {
         password: newPassword,
         isFirstLogin: false
       });
 
-      // Update data sementara lalu loginkan
       const updatedUser = { ...userDataTemp, password: newPassword, isFirstLogin: false };
       alert('Password berhasil diubah! Mengalihkan ke aplikasi...');
       jalankanSesiLogin(updatedUser);

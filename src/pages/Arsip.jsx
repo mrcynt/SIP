@@ -56,7 +56,7 @@ export default function Arsip() {
   const openDeleteModal = (record) => {
     setModal({
       isOpen: true, type: 'confirm', targetRecord: record, title: 'Hapus Berkas & Urutkan Ulang?',
-      message: `Anda akan menghapus ${record.formatTampil || record.serialNumber}. Seluruh nomor antrean setelah berkas ini akan bergeser maju, counter disinkronkan, dan folder Drive akan ditandai [REV].`,
+      message: `Anda akan menghapus ${record.formatTampil || record.serialNumber}. Seluruh nomor antrean setelah berkas ini akan bergeser maju, baris di Excel akan dihapus, dan folder Drive akan ditandai [DIHAPUS].`,
       confirmText: 'Ya, Hapus & Urutkan', showCancel: true
     });
   };
@@ -76,7 +76,11 @@ export default function Arsip() {
     try {
       if (navigator.onLine && driveApiUrl) {
         try {
-          await fetch(driveApiUrl, { method: 'POST', body: JSON.stringify({ action: 'rename_rev', unit: rec.unit, tahap: rec.tahap, serialNumber: rec.serialNumber, nomorUrut: rec.nomorUrut || 0 }) });
+          await fetch(driveApiUrl, { 
+            method: 'POST', 
+            // PERBAIKAN SAKTI: Action diganti agar memicu penghapusan di Excel dan Folder Drive
+            body: JSON.stringify({ action: 'delete_and_reorder', unit: rec.unit, tahap: rec.tahap, serialNumber: rec.serialNumber, nomorUrut: rec.nomorUrut || 0 }) 
+          });
         } catch (driveErr) { console.warn("API Drive sibuk."); }
       }
 
@@ -98,7 +102,7 @@ export default function Arsip() {
       await batch.commit();
       logActivity(user.username, `Menghapus berkas ${rec.serialNumber} dari antrean.`);
       
-      setModal({ isOpen: true, type: 'success', title: 'Berhasil Dihapus!', message: `Berkas SN ${rec.serialNumber} berhasil dihapus dari sistem arsip.`, confirmText: 'Tutup', showCancel: false });
+      setModal({ isOpen: true, type: 'success', title: 'Berhasil Dihapus!', message: `Berkas SN ${rec.serialNumber} berhasil dihapus dari sistem arsip dan Excel.`, confirmText: 'Tutup', showCancel: false });
 
     } catch (err) { 
       console.error(err); alert("Gagal sinkronisasi antrean."); 
@@ -160,7 +164,6 @@ export default function Arsip() {
       <div className="bg-white rounded-3xl shadow-[0_4px_24px_rgba(0,0,0,0.04)] border border-slate-50 overflow-hidden">
         
         <div className="p-4 sm:p-6 md:p-8 bg-slate-50 border-b border-slate-100 flex flex-col xl:flex-row justify-between items-start xl:items-center gap-5">
-          {/* PERBAIKAN RESPONSIVE PADA FILTER */}
           <div className="flex flex-col sm:flex-row w-full xl:w-auto gap-3 flex-wrap">
             <div className="relative w-full sm:w-64"><span className="absolute inset-y-0 left-0 flex items-center pl-4 text-slate-400">🔍</span><input type="text" placeholder="Cari SN / Petugas..." value={searchMonitoring} onChange={(e) => setSearchMonitoring(e.target.value)} className="pl-11 pr-4 py-3 bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-700 outline-none focus:border-[#4285F4] focus:ring-2 focus:ring-blue-50 w-full transition-all shadow-sm placeholder-slate-400" /></div>
             <input type="date" value={filterDate} onChange={(e) => setFilterDate(e.target.value)} className="px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-700 outline-none focus:border-[#4285F4] focus:ring-2 focus:ring-blue-50 cursor-pointer shadow-sm w-full sm:w-40 transition-all hover:bg-slate-50" title="Filter Berdasarkan Tanggal" />
@@ -208,13 +211,11 @@ export default function Arsip() {
                             {Object.entries(haris).map(([hariName, listRecord]) => (
                               <div key={hariName} className="mt-2">
                                 
-                                {/* PERBAIKAN BADGE TANGGAL ANTI-PATAH & RESPONSIVE */}
                                 <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-3">
                                   <span className="text-xs sm:text-sm font-bold text-slate-500 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-100 whitespace-nowrap shadow-sm">📅 {hariName}</span>
                                   <span className="text-[10px] font-extrabold bg-[#E8F0FE] text-[#1A73E8] px-3 py-1.5 rounded-full uppercase tracking-wider whitespace-nowrap shadow-sm">{listRecord.length} Berkas</span>
                                 </div>
 
-                                {/* PERBAIKAN PADDING TABEL DI MOBILE */}
                                 <div className="overflow-x-auto border border-slate-200 rounded-2xl shadow-sm">
                                   <table className="w-full text-left text-sm text-slate-600 bg-white">
                                     <thead className="bg-[#F8F9FA] border-b border-slate-200">

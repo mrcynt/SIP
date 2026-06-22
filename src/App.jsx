@@ -8,11 +8,14 @@ import Dashboard from './pages/Dashboard';
 import Pemeriksaan from './pages/Pemeriksaan';
 import Laporan from './pages/Laporan';
 import Admin from './pages/Admin';
-// Import Halaman Baru Pecahan Admin
 import Peralatan from './pages/Peralatan';
 import Pembelian from './pages/Pembelian';
 import Arsip from './pages/Arsip';
 import AuditLog from './pages/AuditLog';
+
+// Import Halaman Publik & Absensi Baru
+import AbsensiPublik from './pages/AbsensiPublik';
+import Absensi from './pages/Absensi';
 
 // KOMPONEN PELINDUNG RUTE (PROTECTED ROUTE)
 const ProtectedRoute = ({ children, allowedRoles }) => {
@@ -37,11 +40,17 @@ export default function App() {
           <Route path="/" element={<Navigate to="/login" />} />
           <Route path="/login" element={<Login />} />
           
+          {/* RUTE PUBLIK (TIDAK PERLU LOGIN) */}
+          <Route path="/absen" element={<AbsensiPublik />} />
+          
           <Route path="/dashboard" element={<ProtectedRoute allowedRoles={['admin', 'supervisor']}><Layout><Dashboard /></Layout></ProtectedRoute>} />
           <Route path="/laporan" element={<ProtectedRoute allowedRoles={['admin', 'supervisor']}><Layout><Laporan /></Layout></ProtectedRoute>} />
           <Route path="/pemeriksaan" element={<ProtectedRoute allowedRoles={['admin', 'pemeriksa']}><Layout><Pemeriksaan /></Layout></ProtectedRoute>} />
           
-          {/* RUTE-RUTE BARU PECAHAN DARI PANEL ADMIN */}
+          {/* RUTE REKAP ABSENSI BARU */}
+          <Route path="/absensi" element={<ProtectedRoute allowedRoles={['admin', 'supervisor']}><Layout><Absensi /></Layout></ProtectedRoute>} />
+          
+          {/* RUTE-RUTE PECAHAN DARI PANEL ADMIN */}
           <Route path="/admin" element={<ProtectedRoute allowedRoles={['admin']}><Layout><Admin /></Layout></ProtectedRoute>} />
           <Route path="/peralatan" element={<ProtectedRoute allowedRoles={['admin']}><Layout><Peralatan /></Layout></ProtectedRoute>} />
           <Route path="/pembelian" element={<ProtectedRoute allowedRoles={['admin']}><Layout><Pembelian /></Layout></ProtectedRoute>} />
