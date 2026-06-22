@@ -348,7 +348,7 @@ export default function Dashboard() {
                                <h3 className="text-2xl font-black text-[#C5221F] mt-1">{unitData.totalError.toLocaleString('id-ID')}</h3>
                              </div>
                              <div className="bg-[#F3E8FD]/50 p-4 rounded-2xl border border-[#E9D5FF] flex flex-col justify-center shadow-sm">
-                               <p className="text-[10px] font-extrabold text-[#7E22CE] uppercase tracking-widest">Wajib Pengganti</p>
+                               <p className="text-[10px] font-extrabold text-[#7E22CE] uppercase tracking-widest">IFP PENGGANTI</p>
                                <h3 className="text-2xl font-black text-[#7E22CE] mt-1">{unitData.totalPengganti.toLocaleString('id-ID')}</h3>
                              </div>
                            </div>
