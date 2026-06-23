@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { db } from '../config/firebase';
 import { collection, getDocs, query, orderBy } from 'firebase/firestore';
-import { Tooltip as RechartsTooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, LabelList } from 'recharts';
+import { Tooltip as RechartsTooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, LabelList } from 'recharts';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -30,15 +30,14 @@ const extractDriveId = (url) => {
   return match ? match[1] : null;
 };
 
-// Fungsi Warna Dinamis per Unit
 const getUnitColor = (unitName) => {
   const name = unitName.toUpperCase();
-  if (name.includes('IFP')) return '#4285F4'; // Biru Google
-  if (name.includes('BRACKET')) return '#34A853'; // Hijau Google
-  if (name.includes('PC') || name.includes('KOMPUTER') || name.includes('MINI')) return '#FBBC05'; // Kuning Google
-  if (name.includes('LAPTOP') || name.includes('CHROMEBOOK')) return '#8E24AA'; // Ungu
-  if (name.includes('ROUTER') || name.includes('JARINGAN')) return '#12B5CB'; // Cyan
-  if (name.includes('HDD') || name.includes('HARDISK')) return '#F65314'; // Orange
+  if (name.includes('IFP')) return '#4285F4'; 
+  if (name.includes('BRACKET')) return '#34A853'; 
+  if (name.includes('PC') || name.includes('KOMPUTER') || name.includes('MINI')) return '#FBBC05'; 
+  if (name.includes('LAPTOP') || name.includes('CHROMEBOOK')) return '#8E24AA'; 
+  if (name.includes('ROUTER') || name.includes('JARINGAN')) return '#12B5CB'; 
+  if (name.includes('HDD') || name.includes('HARDISK')) return '#F65314'; 
 
   const colors = ['#4285F4', '#34A853', '#FBBC05', '#8E24AA', '#12B5CB', '#F65314', '#3F51B5', '#009688'];
   let hash = 0;
@@ -61,6 +60,49 @@ const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, per
   );
 };
 
+// --- KUSTOMISASI TOOLTIP ANTI GAGAL ---
+const TrendTooltip = ({ active, payload, label, dataList }) => {
+  if (active && payload && payload.length && dataList) {
+    const currentData = payload[0].payload;
+    const currentIndex = dataList.findIndex(d => d.namaTahap === currentData.namaTahap);
+    
+    let growthLabel = '-';
+    let growthPct = 0;
+    
+    if (currentIndex > 0) {
+       const prev = dataList[currentIndex - 1].baseTarget;
+       const curr = currentData.baseTarget;
+       
+       if (prev === 0 && curr === 0) growthPct = 0;
+       else if (prev === 0) growthPct = 100;
+       else growthPct = Math.round(((curr - prev) / prev) * 100);
+       
+       if (growthPct > 0) growthLabel = `+${growthPct}% (Naik) 📈`;
+       else if (growthPct < 0) growthLabel = `${growthPct}% (Turun) 📉`;
+       else growthLabel = `0% (Tetap) ➖`;
+    }
+
+    return (
+      <div className="bg-white/95 backdrop-blur-md p-4 border border-slate-200 rounded-2xl shadow-xl min-w-[150px]">
+        <p className="font-extrabold text-slate-800 text-xs mb-2 uppercase border-b border-slate-100 pb-2">{label}</p>
+        <p className="text-slate-500 text-xs font-medium mb-3">Total Target: <span className="font-black text-[#1A73E8] text-sm">{currentData.baseTarget}</span></p>
+        
+        {currentIndex > 0 ? (
+          <div className={`text-[10px] font-black px-2.5 py-1.5 rounded-lg border flex items-center justify-between gap-2 ${growthPct > 0 ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : growthPct < 0 ? 'bg-red-50 text-red-600 border-red-200' : 'bg-slate-50 text-slate-500 border-slate-200'}`}>
+            <span>Tren:</span>
+            <span>{growthLabel}</span>
+          </div>
+        ) : (
+          <div className="text-[10px] font-bold text-slate-400 bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-100 text-center">
+            Titik Awal (Base)
+          </div>
+        )}
+      </div>
+    );
+  }
+  return null;
+};
+
 // --- KOMPONEN UTAMA DASHBOARD ---
 export default function Dashboard() {
   const [dashboardData, setDashboardData] = useState([]);
@@ -76,9 +118,6 @@ export default function Dashboard() {
   const [unitStatus, setUnitStatus] = useState('semua');
   const [unitSort, setUnitSort] = useState('terbaru');
 
-  const COLOR_SELESAI = '#34A853';   
-  const COLOR_PENGGANTI = '#9333EA'; 
-  const COLOR_ERROR = '#EA4335';     
   const COLOR_SISA_LIGHT = '#F1F3F4';
 
   useEffect(() => { fetchDashboardData(); }, []);
@@ -127,21 +166,13 @@ export default function Dashboard() {
 
         const unitTargets = targetsData.filter(t => t.unit === unit.name);
         const listTahap = unitTargets.map(tahapTarget => {
-          const baseTarget = Number(tahapTarget.jumlah) || 0;
-          
-          let selesaiTahap = 0;
-          unitRecords.filter(r => r.tahap === tahapTarget.tahap).forEach(r => {
-             if(!isRecordError(r) && !r.isPengganti) selesaiTahap++;
-          });
-          
           return { 
             namaTahap: tahapTarget.tahap, 
-            baseTarget: baseTarget,
-            selesai: selesaiTahap
+            baseTarget: Number(tahapTarget.jumlah) || 0 
           };
         });
 
-        // BUG FIX: Mengurutkan secara Numerik Natural (Tahap 10 akan di atas Tahap 2)
+        // Urutkan tahap secara numerik
         listTahap.sort((a, b) => a.namaTahap.localeCompare(b.namaTahap, undefined, { numeric: true, sensitivity: 'base' }));
 
         return { 
@@ -313,7 +344,6 @@ export default function Dashboard() {
                     <div className="lg:col-span-2 flex flex-col gap-6">
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 h-full">
                         
-                        {/* KARTU TARGET (Warna Biru Google) */}
                         <div className="bg-[#4285F4] text-white p-6 rounded-3xl border border-blue-500 flex flex-col justify-center shadow-md relative overflow-hidden">
                           <div className="absolute -right-4 -top-4 text-7xl opacity-10">🎯</div>
                           <p className="text-xs font-extrabold text-blue-100 uppercase tracking-widest">Total Target</p>
@@ -321,7 +351,7 @@ export default function Dashboard() {
                             <h3 className="text-5xl font-black text-white">{unitData.baseGrandTotal.toLocaleString('id-ID')}</h3>
                           </div>
                           {unitData.overTarget > 0 && (
-                            <span className="text-xs font-black text-blue-600 bg-white px-2 py-1 rounded-lg mt-3 w-fit shadow-sm" title="Jumlah unit yang melebihi target awal">
+                            <span className="text-xs font-black text-blue-600 bg-white px-2 py-1 rounded-lg mt-3 w-fit shadow-sm">
                               +{unitData.overTarget} Over Target
                             </span>
                           )}
@@ -329,7 +359,6 @@ export default function Dashboard() {
 
                         <div className="flex flex-col gap-4 col-span-2">
                            <div className="grid grid-cols-2 gap-4 flex-1">
-                             {/* KARTU TELAH DIKERJAKAN (Warna Hijau Google) */}
                              <div className="bg-[#34A853] text-white p-4 rounded-2xl border border-green-600 flex flex-col justify-center shadow-md">
                                <p className="text-[10px] font-extrabold text-green-100 uppercase tracking-widest">Telah Dikerjakan</p>
                                <h3 className="text-3xl font-black text-white mt-1">{unitData.normalCount.toLocaleString('id-ID')}</h3>
@@ -365,7 +394,6 @@ export default function Dashboard() {
                             <Pie data={unitData.pieData} cx="50%" cy="50%" innerRadius={55} outerRadius={80} paddingAngle={4} dataKey="value" stroke="none" labelLine={false} label={renderCustomizedLabel}>
                               {unitData.pieData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
                             </Pie>
-                            <RechartsTooltip contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)'}} />
                           </PieChart>
                         </ResponsiveContainer>
                         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
@@ -379,25 +407,46 @@ export default function Dashboard() {
                     </div>
                   </div>
 
-                  {/* BARIS 2: GRAFIK BATANG PER TAHAP */}
+                  {/* BARIS 2: GRAFIK BATANG & TREN PERTUMBUHAN */}
                   <div className="flex flex-col bg-white border border-slate-100 rounded-3xl p-6 shadow-sm mt-4">
-                    <h3 className="font-bold text-slate-700 mb-6 text-sm text-center">📈 Target Alokasi per Tahap</h3>
+                    <h3 className="font-bold text-slate-700 mb-6 text-sm text-center">📈 Target Alokasi & Tren Pertumbuhan per Tahap</h3>
                     {unitData.listTahap.length === 0 ? (
                       <div className="flex-1 min-h-[200px] flex items-center justify-center text-slate-400 text-sm font-medium">Target tahap belum diatur di Master Data.</div>
                     ) : (
                       <div className="w-full h-[320px] mt-2">
                         <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={unitData.listTahap} margin={{ top: 30, right: 10, left: -20, bottom: 0 }}>
+                          <ComposedChart data={unitData.listTahap} margin={{ top: 30, right: 20, left: -20, bottom: 0 }}>
+                            
+                            <defs>
+                              {/* GRADIENT BIRU GOOGLE HALUS UNTUK SEMUA BATANG */}
+                              <linearGradient id="colorGoogleBlueGrad" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor="#8AB4F8" stopOpacity={1}/>
+                                <stop offset="100%" stopColor="#1A73E8" stopOpacity={1}/>
+                              </linearGradient>
+                            </defs>
+                            
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F1F3F4" />
                             <XAxis dataKey="namaTahap" tick={{fontSize: 10, fill: '#64748B', fontWeight: 'bold'}} axisLine={false} tickLine={false} />
                             <YAxis tick={{fontSize: 10, fill: '#64748B'}} axisLine={false} tickLine={false} />
-                            <RechartsTooltip cursor={{fill: '#F8F9FA'}} contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', fontSize: '12px'}} />
                             
-                            <Bar dataKey="baseTarget" name="Total Target" fill={unitData.color} radius={[6, 6, 0, 0]} maxBarSize={90}>
-                              <LabelList dataKey="baseTarget" position="top" style={{ fontSize: '11px', fill: unitData.color, fontWeight: '900' }} />
+                            <RechartsTooltip cursor={{fill: '#F8F9FA'}} content={(props) => <TrendTooltip {...props} dataList={unitData.listTahap} />} />
+                            
+                            {/* SEMUA BATANG MENGGUNAKAN 1 WARNA BIRU GOOGLE GRADIENT */}
+                            <Bar dataKey="baseTarget" name="Total Target" fill="url(#colorGoogleBlueGrad)" radius={[6, 6, 0, 0]} maxBarSize={90}>
+                              <LabelList dataKey="baseTarget" position="top" style={{ fontSize: '11px', fill: '#64748B', fontWeight: '900' }} />
                             </Bar>
+
+                            {/* GARIS TREN (TETAP CYAN) */}
+                            <Line 
+                              type="linear" 
+                              dataKey="baseTarget" 
+                              stroke="#00E5FF" 
+                              strokeWidth={3} 
+                              dot={{ stroke: '#00E5FF', strokeWidth: 2, r: 4, fill: '#fff' }} 
+                              activeDot={{ r: 6, fill: '#00E5FF', stroke: '#fff', strokeWidth: 2 }} 
+                            />
                             
-                          </BarChart>
+                          </ComposedChart>
                         </ResponsiveContainer>
                       </div>
                     )}
@@ -408,7 +457,7 @@ export default function Dashboard() {
             </div>
           )}
 
-          {/* TAB 2, 3... : TABEL DATA OPERASIONAL PER UNIT */}
+          {/* TAB DATA OPERASIONAL PER UNIT */}
           {activeUnitData && activeDashTab !== 'grafik' && (
             <div className="bg-white p-6 md:p-8 rounded-3xl shadow-[0_4px_24px_rgba(0,0,0,0.04)] border border-slate-50 animate-in fade-in slide-in-from-bottom-4 duration-500">
               
@@ -446,7 +495,7 @@ export default function Dashboard() {
                    
                    <select value={unitTahap} onChange={(e) => setUnitTahap(e.target.value)} className="px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-medium outline-none focus:border-[#4285F4] text-slate-800 w-full sm:w-36 cursor-pointer shadow-sm shrink-0">
                      <option value="">Semua Tahap</option>
-                     {activeUnitData.listTahap.map(t => <option key={t.id} value={t.namaTahap}>{t.namaTahap}</option>)}
+                     {activeUnitData.listTahap.map(t => <option key={t.namaTahap} value={t.namaTahap}>{t.namaTahap}</option>)}
                    </select>
 
                    <select value={unitSort} onChange={(e) => setUnitSort(e.target.value)} className="px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-[#4285F4] text-slate-700 w-full sm:w-40 cursor-pointer shadow-sm shrink-0">
