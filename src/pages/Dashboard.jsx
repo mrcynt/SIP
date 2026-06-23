@@ -489,7 +489,7 @@ export default function Dashboard() {
         {/* TOMBOL EXPORT PINDAH KE SINI BIAR SEJAJAR & DI KANAN */}
         {activeDashTab === 'grafik' && (
           <div className="flex gap-2 shrink-0 bg-white p-1 rounded-xl border border-slate-200 shadow-sm animate-in fade-in duration-300">
-             <button onClick={exportGlobalCSV} className="px-5 py-2.5 bg-[#107C41] hover:bg-[#0B5C30] text-white rounded-lg text-sm font-bold transition-all flex items-center gap-2">📥 ExportExcel</button>
+             <button onClick={exportGlobalCSV} className="px-5 py-2.5 bg-[#107C41] hover:bg-[#0B5C30] text-white rounded-lg text-sm font-bold transition-all flex items-center gap-2">📥 Export Excel</button>
              <button onClick={exportGlobalPDF} className="px-5 py-2.5 bg-[#C5221F] hover:bg-[#A50E0E] text-white rounded-lg text-sm font-bold transition-all flex items-center gap-2">📄 Export PDF</button>
           </div>
         )}
