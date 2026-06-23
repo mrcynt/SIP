@@ -24,6 +24,26 @@ const formatWaktu = (isoString) => {
   return new Intl.DateTimeFormat('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(isoString));
 };
 
+// HELPER: Format Tanggal Pendek (contoh: 23 Jun)
+const formatTanggalPendek = (dateStr) => {
+  if (!dateStr) return '';
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr;
+    return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
+  } catch (e) { return dateStr; }
+};
+
+// HELPER: Menggabungkan rentang tanggal
+const formatRangeTanggal = (start, end) => {
+  const s = formatTanggalPendek(start);
+  const e = formatTanggalPendek(end);
+  if (s && e && s !== e) return `${s} - ${e}`;
+  if (s) return s;
+  if (e) return e;
+  return '';
+};
+
 const extractDriveId = (url) => {
   if (!url) return null;
   const match = url.match(/folders\/([a-zA-Z0-9-_]+)/);
@@ -60,47 +80,88 @@ const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, per
   );
 };
 
-// --- KUSTOMISASI TOOLTIP ANTI GAGAL ---
-const TrendTooltip = ({ active, payload, label, dataList }) => {
-  if (active && payload && payload.length && dataList) {
-    const currentData = payload[0].payload;
-    const currentIndex = dataList.findIndex(d => d.namaTahap === currentData.namaTahap);
+// KOMPONEN CUSTOM: Label Tanggal Miring Ke Atas di dalam Batang (ANTI-CRASH)
+const TiltedDateLabel = (props) => {
+  try {
+    const { x, y, width, height, value } = props;
     
-    let growthLabel = '-';
-    let growthPct = 0;
+    // Kembalikan <g></g> (grup kosong), BUKAN null, agar grafik tidak crash
+    if (!value || typeof height !== 'number' || typeof width !== 'number' || typeof x !== 'number' || typeof y !== 'number') return <g></g>;
     
-    if (currentIndex > 0) {
-       const prev = dataList[currentIndex - 1].baseTarget;
-       const curr = currentData.baseTarget;
-       
-       if (prev === 0 && curr === 0) growthPct = 0;
-       else if (prev === 0) growthPct = 100;
-       else growthPct = Math.round(((curr - prev) / prev) * 100);
-       
-       if (growthPct > 0) growthLabel = `+${growthPct}% (Naik) 📈`;
-       else if (growthPct < 0) growthLabel = `${growthPct}% (Turun) 📉`;
-       else growthLabel = `0% (Tetap) ➖`;
-    }
+    // Jangan tampilkan jika batangnya terlalu pendek
+    if (height < 40) return <g></g>; 
+    
+    const cx = x + width / 2;
+    const cy = y + height / 2;
+    
+    if (isNaN(cx) || isNaN(cy)) return <g></g>;
 
     return (
-      <div className="bg-white/95 backdrop-blur-md p-4 border border-slate-200 rounded-2xl shadow-xl min-w-[150px]">
-        <p className="font-extrabold text-slate-800 text-xs mb-2 uppercase border-b border-slate-100 pb-2">{label}</p>
-        <p className="text-slate-500 text-xs font-medium mb-3">Total Target: <span className="font-black text-[#1A73E8] text-sm">{currentData.baseTarget}</span></p>
-        
-        {currentIndex > 0 ? (
-          <div className={`text-[10px] font-black px-2.5 py-1.5 rounded-lg border flex items-center justify-between gap-2 ${growthPct > 0 ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : growthPct < 0 ? 'bg-red-50 text-red-600 border-red-200' : 'bg-slate-50 text-slate-500 border-slate-200'}`}>
-            <span>Tren:</span>
-            <span>{growthLabel}</span>
-          </div>
-        ) : (
-          <div className="text-[10px] font-bold text-slate-400 bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-100 text-center">
-            Titik Awal (Base)
-          </div>
-        )}
-      </div>
+      <text 
+        x={cx} y={cy} 
+        fill="rgba(255, 255, 255, 0.9)" 
+        fontSize={10} 
+        fontWeight="bold" 
+        textAnchor="middle" 
+        dominantBaseline="middle" 
+        transform={`rotate(-90, ${cx}, ${cy})`}
+      >
+        {value}
+      </text>
     );
+  } catch (err) {
+    return <g></g>;
   }
-  return null;
+};
+
+// --- KUSTOMISASI TOOLTIP ANTI GAGAL ---
+const TrendTooltip = ({ active, payload, label, dataList }) => {
+  try {
+    if (active && payload && payload.length && dataList) {
+      const currentData = payload[0].payload;
+      const currentIndex = dataList.findIndex(d => d.namaTahap === currentData.namaTahap);
+      
+      let growthLabel = '-';
+      let growthPct = 0;
+      
+      if (currentIndex > 0) {
+         const prev = dataList[currentIndex - 1].baseTarget;
+         const curr = currentData.baseTarget;
+         
+         if (prev === 0 && curr === 0) growthPct = 0;
+         else if (prev === 0) growthPct = 100;
+         else growthPct = Math.round(((curr - prev) / prev) * 100);
+         
+         if (growthPct > 0) growthLabel = `+${growthPct}% (Naik) 📈`;
+         else if (growthPct < 0) growthLabel = `${growthPct}% (Turun) 📉`;
+         else growthLabel = `0% (Tetap) ➖`;
+      }
+
+      return (
+        <div className="bg-white/95 backdrop-blur-md p-4 border border-slate-200 rounded-2xl shadow-xl min-w-[150px] z-50">
+          <p className="font-extrabold text-slate-800 text-xs mb-1 uppercase border-b border-slate-100 pb-2 flex justify-between items-center gap-4">
+            <span>{label}</span>
+            {currentData.tanggalFormatted && <span className="font-mono text-[10px] text-blue-500 bg-blue-50 px-1.5 py-0.5 rounded">{currentData.tanggalFormatted}</span>}
+          </p>
+          <p className="text-slate-500 text-xs font-medium mb-3 mt-2">Total Target: <span className="font-black text-[#1A73E8] text-sm">{currentData.baseTarget}</span></p>
+          
+          {currentIndex > 0 ? (
+            <div className={`text-[10px] font-black px-2.5 py-1.5 rounded-lg border flex items-center justify-between gap-2 ${growthPct > 0 ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : growthPct < 0 ? 'bg-red-50 text-red-600 border-red-200' : 'bg-slate-50 text-slate-500 border-slate-200'}`}>
+              <span>Tren:</span>
+              <span>{growthLabel}</span>
+            </div>
+          ) : (
+            <div className="text-[10px] font-bold text-slate-400 bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-100 text-center">
+              Titik Awal (Base)
+            </div>
+          )}
+        </div>
+      );
+    }
+    return null;
+  } catch (e) {
+    return null;
+  }
 };
 
 // --- KOMPONEN UTAMA DASHBOARD ---
@@ -133,12 +194,19 @@ export default function Dashboard() {
   const fetchDashboardData = async () => {
     setIsLoading(true);
     try {
+      // Fetch Master Data
       const unitsSnap = await getDocs(collection(db, 'master_units'));
       const unitsData = unitsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      
       const targetsSnap = await getDocs(collection(db, 'master_targets'));
       const targetsData = targetsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      
       const recordsSnap = await getDocs(query(collection(db, 'pemeriksaan_records'), orderBy('timestamp', 'desc')));
       const allRecordsData = recordsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+      // FETCH DATA TAHAP UNTUK MENGAMBIL TANGGALNYA
+      const tahapsSnap = await getDocs(collection(db, 'master_tahaps'));
+      const masterTahapsData = tahapsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
       
       setRecentRecords(allRecordsData); 
 
@@ -166,9 +234,26 @@ export default function Dashboard() {
 
         const unitTargets = targetsData.filter(t => t.unit === unit.name);
         const listTahap = unitTargets.map(tahapTarget => {
+          
+          // PENCOCOKAN DATA TANGGAL
+          const matchedTahap = masterTahapsData.find(th => th.name === tahapTarget.tahap);
+          const startDate = matchedTahap?.startDate || '';
+          const endDate = matchedTahap?.endDate || '';
+          const rawDate = matchedTahap?.tanggal || '';
+          
+          let tanggalFormatted = '';
+          if (startDate && endDate) {
+              tanggalFormatted = formatRangeTanggal(startDate, endDate);
+          } else if (startDate) {
+              tanggalFormatted = formatTanggalPendek(startDate);
+          } else if (rawDate) {
+              tanggalFormatted = formatTanggalPendek(rawDate);
+          }
+
           return { 
             namaTahap: tahapTarget.tahap, 
-            baseTarget: Number(tahapTarget.jumlah) || 0 
+            baseTarget: Number(tahapTarget.jumlah) || 0,
+            tanggalFormatted: tanggalFormatted
           };
         });
 
@@ -194,7 +279,8 @@ export default function Dashboard() {
         };
       });
 
-      setDashboardData(compiledData.filter(u => u.baseGrandTotal > 0 || u.normalCount > 0 || u.totalError > 0));
+      // Filter: Tampilkan unit yang memiliki target/data
+      setDashboardData(compiledData.filter(u => u.baseGrandTotal > 0 || u.normalCount > 0 || u.totalError > 0 || u.listTahap.length > 0));
     } catch (err) { console.error(err); } finally { setIsLoading(false); }
   };
 
@@ -418,7 +504,6 @@ export default function Dashboard() {
                           <ComposedChart data={unitData.listTahap} margin={{ top: 30, right: 20, left: -20, bottom: 0 }}>
                             
                             <defs>
-                              {/* GRADIENT BIRU GOOGLE HALUS UNTUK SEMUA BATANG */}
                               <linearGradient id="colorGoogleBlueGrad" x1="0" y1="0" x2="0" y2="1">
                                 <stop offset="0%" stopColor="#8AB4F8" stopOpacity={1}/>
                                 <stop offset="100%" stopColor="#1A73E8" stopOpacity={1}/>
@@ -434,9 +519,10 @@ export default function Dashboard() {
                             {/* SEMUA BATANG MENGGUNAKAN 1 WARNA BIRU GOOGLE GRADIENT */}
                             <Bar dataKey="baseTarget" name="Total Target" fill="url(#colorGoogleBlueGrad)" radius={[6, 6, 0, 0]} maxBarSize={90}>
                               <LabelList dataKey="baseTarget" position="top" style={{ fontSize: '11px', fill: '#64748B', fontWeight: '900' }} />
+                              {/* PENYISIPAN TANGGAL MIRING YANG SUDAH DILINDUNGI */}
+                              <LabelList dataKey="tanggalFormatted" content={<TiltedDateLabel />} />
                             </Bar>
 
-                            {/* GARIS TREN (TETAP CYAN) */}
                             <Line 
                               type="linear" 
                               dataKey="baseTarget" 
