@@ -17,6 +17,9 @@ import AuditLog from './pages/AuditLog';
 import AbsensiPublik from './pages/AbsensiPublik';
 import Absensi from './pages/Absensi';
 
+// IMPORT HALAMAN LAPORAN BERKAS (BARU)
+import LaporanBerkas from './pages/LaporanBerkas';
+
 // KOMPONEN PELINDUNG RUTE (PROTECTED ROUTE)
 const ProtectedRoute = ({ children, allowedRoles }) => {
   const { user, loading } = useAuth();
@@ -45,6 +48,10 @@ export default function App() {
           
           <Route path="/dashboard" element={<ProtectedRoute allowedRoles={['admin', 'supervisor']}><Layout><Dashboard /></Layout></ProtectedRoute>} />
           <Route path="/laporan" element={<ProtectedRoute allowedRoles={['admin', 'supervisor']}><Layout><Laporan /></Layout></ProtectedRoute>} />
+          
+          {/* RUTE LAPORAN BERKAS (BARU) */}
+          <Route path="/laporan-berkas" element={<ProtectedRoute allowedRoles={['admin', 'supervisor']}><Layout><LaporanBerkas /></Layout></ProtectedRoute>} />
+          
           <Route path="/pemeriksaan" element={<ProtectedRoute allowedRoles={['admin', 'pemeriksa']}><Layout><Pemeriksaan /></Layout></ProtectedRoute>} />
           
           {/* RUTE REKAP ABSENSI BARU */}

@@ -67,10 +67,7 @@ export default function Laporan() {
 
   // --- FUNGSI BUKA MODAL EDIT ---
   const openEditTindakLanjut = (record) => {
-    // Pisahkan teks manual admin dari teks sisipan [Sistem]
     const manualNote = record.tindakLanjut ? record.tindakLanjut.split('\n[Sistem]')[0].trim() : '';
-    
-    // Cari SN pengganti mana saja yang sudah pernah diikat ke Error ini
     const existingReplacements = records
       .filter(r => r.linkedErrorSN === record.serialNumber)
       .map(r => r.id);
@@ -87,24 +84,18 @@ export default function Laporan() {
       const batch = writeBatch(db);
       const targetSNError = tindakLanjutModal.record.serialNumber;
       
-      // 1. Dapatkan daftar ID pengganti yang LAMA (sebelum diedit)
       const oldReplacements = records.filter(r => r.linkedErrorSN === targetSNError).map(r => r.id);
-      
-      // 2. Cari mana yang dilepas (di-uncheck) dan mana teks SN yang baru
       const unlinkedIds = oldReplacements.filter(id => !selectedPengganti.includes(id));
       const linkedSNsText = records.filter(r => selectedPengganti.includes(r.id)).map(r => r.serialNumber).join(', ');
 
-      // 3. Rangkai catatan final
       let finalNote = tindakLanjutModal.note.trim();
       if (linkedSNsText) {
         finalNote += `\n[Sistem] Digantikan oleh: ${linkedSNsText}`;
       }
 
-      // 4. Update Dokumen Unit Error-nya
       const recRef = doc(db, 'pemeriksaan_records', tindakLanjutModal.record.id);
       batch.update(recRef, { tindakLanjut: finalNote });
 
-      // 5. Update Status Unit Pengganti (Lepas yang di-uncheck, Kunci yang dicentang)
       unlinkedIds.forEach(id => {
         batch.update(doc(db, 'pemeriksaan_records', id), { linkedErrorSN: null });
       });
@@ -114,7 +105,6 @@ export default function Laporan() {
 
       await batch.commit();
       
-      // Update State Lokal biar UI langsung berubah tanpa perlu loading
       setRecords(records.map(r => {
         if (r.id === tindakLanjutModal.record.id) return { ...r, tindakLanjut: finalNote };
         if (unlinkedIds.includes(r.id)) return { ...r, linkedErrorSN: null };
@@ -161,7 +151,7 @@ export default function Laporan() {
   const getAvailableReplacements = (unitError, tahapError, targetSNError) => {
     return records.filter(r => 
       r.isPengganti === true && 
-      (r.linkedErrorSN === null || r.linkedErrorSN === targetSNError) && // Tampilkan yang nganggur ATAU yang memang sudah terikat dengan Error ini
+      (r.linkedErrorSN === null || r.linkedErrorSN === targetSNError) && 
       r.unit === unitError && 
       r.tahap === tahapError
     );
@@ -236,71 +226,128 @@ export default function Laporan() {
     <div className="max-w-7xl mx-auto pb-20 font-sans relative">
       <Modal isOpen={modal.isOpen} title={modal.title} message={modal.message} type={modal.type} onConfirm={handleModalConfirm} onCancel={() => setModal({ ...modal, isOpen: false })} confirmText={modal.confirmText} isDestructive={modal.type === 'confirm'} showCancel={modal.showCancel} />
 
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Pusat Laporan Data</h1>
-        <p className="text-slate-500 mt-1">Kelola data reguler, perbaiki unit bermasalah, dan pantau unit pengganti secara terpusat.</p>
+      {/* HEADER DAN TOMBOL EXPORT */}
+      <div className="mb-8 flex flex-col md:flex-row md:justify-between md:items-end gap-4">
+        <div>
+          <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Pusat Laporan Data</h1>
+          <p className="text-slate-500 mt-1">Kelola data reguler, perbaiki unit bermasalah, dan pantau unit pengganti secara terpusat.</p>
+        </div>
+        
+        <div className="flex gap-2 shrink-0 bg-white p-1 rounded-xl border border-slate-200 shadow-sm w-full md:w-auto">
+          <button onClick={exportToExcel} className="flex-1 md:flex-none px-5 py-2.5 bg-[#107C41] hover:bg-[#0B5C30] text-white rounded-lg text-sm font-bold transition-all flex items-center justify-center gap-2 whitespace-nowrap">📥 Excel</button>
+          <button onClick={exportToPDF} className="flex-1 md:flex-none px-5 py-2.5 bg-[#C5221F] hover:bg-[#A50E0E] text-white rounded-lg text-sm font-bold transition-all flex items-center justify-center gap-2 whitespace-nowrap">📄 PDF</button>
+        </div>
       </div>
 
-      <div className="bg-white rounded-3xl shadow-[0_4px_24px_rgba(0,0,0,0.04)] border border-slate-50 overflow-hidden mb-8">
+      <div className="bg-white rounded-3xl shadow-[0_4px_24px_rgba(0,0,0,0.04)] border border-slate-50 overflow-hidden mb-8 p-6 md:p-8">
         
-        <div className="p-6 md:p-8 bg-slate-50 border-b border-slate-100 flex flex-col xl:flex-row justify-between items-start xl:items-center gap-5">
-          <div className="flex flex-col sm:flex-row w-full xl:w-auto gap-3 flex-wrap">
-            <div className="relative w-full sm:w-64"><span className="absolute inset-y-0 left-0 flex items-center pl-4 text-slate-400">🔍</span><input type="text" placeholder="Cari SN / Petugas..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-11 pr-4 py-3 bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-700 outline-none focus:border-[#4285F4] focus:ring-2 focus:ring-blue-50 w-full transition-all shadow-sm placeholder-slate-400" /></div>
-            <input type="date" value={filterDate} onChange={(e) => setFilterDate(e.target.value)} className="px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-700 outline-none focus:border-[#4285F4] focus:ring-2 focus:ring-blue-50 cursor-pointer shadow-sm w-full sm:w-40 transition-all hover:bg-slate-50" title="Filter Berdasarkan Tanggal" />
-            <select value={filterUnit} onChange={(e) => setFilterUnit(e.target.value)} className="px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-700 outline-none focus:border-[#4285F4] focus:ring-2 focus:ring-blue-50 cursor-pointer shadow-sm w-full sm:w-40 transition-all hover:bg-slate-50"><option value="">Semua Unit</option>{units.map((u, i) => <option key={i} value={u}>{u}</option>)}</select>
-            <select value={filterTahap} onChange={(e) => setFilterTahap(e.target.value)} className="px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-700 outline-none focus:border-[#4285F4] focus:ring-2 focus:ring-blue-50 cursor-pointer shadow-sm w-full sm:w-40 transition-all hover:bg-slate-50"><option value="">Semua Tahap</option>{tahaps.map((t, i) => <option key={i} value={t}>{t}</option>)}</select>
-          </div>
-          <div className="flex gap-3 w-full sm:w-auto mt-2 xl:mt-0 xl:border-l xl:border-slate-200 xl:pl-5">
-            <button onClick={exportToExcel} className="flex-1 sm:flex-none items-center justify-center gap-2 bg-white border border-slate-200 hover:border-green-500 hover:bg-green-50 text-green-700 px-5 py-3 rounded-xl text-sm font-bold transition-all shadow-sm flex">📊 Excel</button>
-            <button onClick={exportToPDF} className="flex-1 sm:flex-none items-center justify-center gap-2 bg-white border border-slate-200 hover:border-red-500 hover:bg-red-50 text-red-700 px-5 py-3 rounded-xl text-sm font-bold transition-all shadow-sm flex">📄 PDF</button>
-          </div>
-        </div>
-
-        <div className="overflow-x-auto">
-          {/* --- NAVIGASI 3 TAB --- */}
-          <div className="flex flex-wrap gap-3 mb-6 bg-[#F1F3F4] p-1.5 rounded-2xl w-fit border border-slate-200 ml-6 mt-6">
-            <button onClick={() => setActiveTab('semua')} className={`px-6 py-2.5 text-xs font-bold rounded-xl transition-all ${activeTab === 'semua' ? 'bg-white text-[#1A73E8] shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>
+        {/* --- FILTER BAR SEJAJAR YANG SANGAT ELEGAN --- */}
+        <div className="flex flex-col xl:flex-row items-center gap-3 mb-6 bg-slate-50/50 p-2 md:p-3 rounded-2xl border border-slate-100">
+          
+          {/* TAB STATUS (Kiri) */}
+          <div className="flex gap-1 bg-white p-1 rounded-xl border border-slate-200 shadow-sm shrink-0 w-full xl:w-auto overflow-x-auto">
+            <button 
+              onClick={() => setActiveTab('semua')} 
+              className={`flex-1 xl:flex-none px-4 py-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${activeTab === 'semua' ? 'bg-[#1A73E8] text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}
+            >
               📦 Semua Data
             </button>
-            <button onClick={() => setActiveTab('error')} className={`px-6 py-2.5 text-xs font-bold rounded-xl transition-all flex items-center gap-2 ${activeTab === 'error' ? 'bg-[#FCE8E6] text-[#C5221F] shadow-sm border border-[#FAD2CF]' : 'text-slate-500 hover:text-[#C5221F]'}`}>
+            <button 
+              onClick={() => setActiveTab('error')} 
+              className={`flex-1 xl:flex-none px-4 py-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${activeTab === 'error' ? 'bg-[#C5221F] text-white shadow-sm' : 'text-slate-500 hover:bg-red-50 hover:text-[#C5221F]'}`}
+            >
               ⚠️ Unit Bermasalah
             </button>
-            <button onClick={() => setActiveTab('pengganti')} className={`px-6 py-2.5 text-xs font-bold rounded-xl transition-all flex items-center gap-2 ${activeTab === 'pengganti' ? 'bg-[#E8F0FE] text-[#1967D2] shadow-sm border border-[#D2E3FC]' : 'text-slate-500 hover:text-[#1967D2]'}`}>
+            <button 
+              onClick={() => setActiveTab('pengganti')} 
+              className={`flex-1 xl:flex-none px-4 py-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${activeTab === 'pengganti' ? 'bg-[#9333EA] text-white shadow-sm' : 'text-slate-500 hover:bg-purple-50 hover:text-[#9333EA]'}`}
+            >
               🔄 Unit Pengganti
             </button>
           </div>
 
+          <button 
+            onClick={() => { setSearchTerm(''); setFilterDate(''); setFilterUnit(''); setFilterTahap(''); }} 
+            className="px-3 py-2 bg-white text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-xl text-xs font-bold transition-all border border-slate-200 hover:border-red-200 shadow-sm whitespace-nowrap flex items-center justify-center shrink-0 w-full xl:w-auto"
+          >
+            🗑️ Reset
+          </button>
+
+          <div className="w-[1px] h-8 bg-slate-300 hidden xl:block mx-1"></div>
+
+          {/* INPUT DAN DROPDOWN (Kanan) */}
+          <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 w-full xl:w-auto flex-grow">
+            <div className="flex-grow min-w-[150px] w-full sm:w-auto">
+              <input 
+                type="text" 
+                placeholder="🔍 Cari SN / Petugas..." 
+                value={searchTerm} 
+                onChange={(e) => setSearchTerm(e.target.value)} 
+                className="w-full px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium outline-none focus:border-[#4285F4] text-slate-800 shadow-sm" 
+              />
+            </div>
+            
+            <input 
+              type="date" 
+              value={filterDate} 
+              onChange={(e) => setFilterDate(e.target.value)} 
+              className="w-full sm:w-36 px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium outline-none focus:border-[#4285F4] text-slate-800 shadow-sm shrink-0 cursor-pointer" 
+              title="Filter Tanggal" 
+            />
+            
+            <select 
+              value={filterUnit} 
+              onChange={(e) => setFilterUnit(e.target.value)} 
+              className="w-full sm:w-32 px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium outline-none focus:border-[#4285F4] text-slate-800 shadow-sm shrink-0 cursor-pointer"
+            >
+              <option value="">Semua Unit</option>
+              {units.map((u, i) => <option key={i} value={u}>{u}</option>)}
+            </select>
+
+            <select 
+              value={filterTahap} 
+              onChange={(e) => setFilterTahap(e.target.value)} 
+              className="w-full sm:w-36 px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium outline-none focus:border-[#4285F4] text-slate-800 shadow-sm shrink-0 cursor-pointer"
+            >
+              <option value="">Semua Tahap</option>
+              {tahaps.map((t, i) => <option key={i} value={t}>{t}</option>)}
+            </select>
+          </div>
+
+        </div>
+
+        <div className="overflow-x-auto rounded-xl border border-slate-200 shadow-sm max-h-[600px] overflow-y-auto relative">
           <table className="w-full text-left text-sm text-slate-600">
-            <thead className="bg-white">
+            <thead className="bg-[#F8F9FA] sticky top-0 z-10 shadow-sm">
               <tr className="text-xs font-extrabold text-slate-500 uppercase tracking-wider border-b border-slate-100">
-                <th className="py-5 px-8">Waktu Input</th>
-                <th className="py-5 px-8">Serial Number</th>
-                <th className="py-5 px-8">Kategori / Tahap</th>
-                {activeTab === 'error' && <th className="py-5 px-8 w-1/3">Status & Tindak Lanjut</th>}
-                {activeTab === 'pengganti' && <th className="py-5 px-8">Keterikatan Pengganti</th>}
-                {activeTab === 'semua' && <th className="py-5 px-8">Petugas</th>}
-                {isAdmin && <th className="py-5 px-8 text-right w-32">Aksi</th>}
+                <th className="py-4 px-6 whitespace-nowrap">Waktu Input</th>
+                <th className="py-4 px-6 whitespace-nowrap">Serial Number</th>
+                <th className="py-4 px-6 whitespace-nowrap">Kategori / Tahap</th>
+                {activeTab === 'error' && <th className="py-4 px-6 w-1/3">Status & Tindak Lanjut</th>}
+                {activeTab === 'pengganti' && <th className="py-4 px-6">Keterikatan Pengganti</th>}
+                {activeTab === 'semua' && <th className="py-4 px-6 whitespace-nowrap">Petugas</th>}
+                {isAdmin && <th className="py-4 px-6 text-right w-32">Aksi</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {isLoading ? (
                 <tr><td colSpan={isAdmin ? "5" : "4"} className="py-16 text-center text-[#1A73E8] font-medium animate-pulse">Menyiapkan laporan...</td></tr>
               ) : recordsToDisplay.length === 0 ? (
-                <tr><td colSpan={isAdmin ? "5" : "4"} className="py-16 text-center text-slate-400">Tidak ada data di tab ini.</td></tr>
+                <tr><td colSpan={isAdmin ? "5" : "4"} className="py-16 text-center text-slate-400">Tidak ada data di tab ini yang sesuai dengan filter.</td></tr>
               ) : (
                 recordsToDisplay.map((record) => (
                   <tr key={record.id} className={`transition-colors group ${activeTab === 'error' ? 'hover:bg-red-50/30' : activeTab === 'pengganti' ? 'hover:bg-blue-50/20' : 'hover:bg-blue-50/30'}`}>
-                    <td className="py-4 px-8 text-xs text-slate-500 font-medium">{new Date(record.timestamp).toLocaleString('id-ID', { day: '2-digit', month: 'short', year:'numeric', hour: '2-digit', minute:'2-digit' })}</td>
-                    <td className="py-4 px-8 font-mono font-black text-[#1A73E8] text-base">
+                    <td className="py-4 px-6 text-xs text-slate-500 font-medium whitespace-nowrap">{new Date(record.timestamp).toLocaleString('id-ID', { day: '2-digit', month: 'short', year:'numeric', hour: '2-digit', minute:'2-digit' })}</td>
+                    <td className="py-4 px-6 font-mono font-black text-[#1A73E8] text-base whitespace-nowrap">
                       {record.formatTampil ? record.formatTampil : (record.nomorUrut ? `${record.nomorUrut}. ${record.serialNumber}` : record.serialNumber)}
                     </td>
-                    <td className="py-4 px-8 font-extrabold text-slate-800">
+                    <td className="py-4 px-6 font-extrabold text-slate-800 whitespace-nowrap">
                       {record.unit} <span className="font-semibold text-xs text-slate-400 ml-1">({record.tahap})</span>
                     </td>
                     
                     {/* KOLOM TAB ERROR (DENGAN TOMBOL EDIT) */}
                     {activeTab === 'error' && (
-                      <td className="py-4 px-8">
+                      <td className="py-4 px-6">
                         {record.tindakLanjut ? (
                            <div className="bg-green-50 border border-green-200 p-3 rounded-xl whitespace-pre-line relative group/edit transition-all hover:shadow-md hover:-translate-y-0.5">
                              <div className="flex justify-between items-start gap-4">
@@ -327,7 +374,7 @@ export default function Laporan() {
 
                     {/* KOLOM TAB PENGGANTI */}
                     {activeTab === 'pengganti' && (
-                      <td className="py-4 px-8">
+                      <td className="py-4 px-6">
                         {record.linkedErrorSN ? (
                           <div className="bg-blue-50 border border-blue-200 px-3 py-2 rounded-xl inline-block">
                              <p className="text-[10px] text-blue-600 font-bold uppercase mb-0.5">Digunakan Untuk:</p>
@@ -343,11 +390,11 @@ export default function Laporan() {
 
                     {/* KOLOM TAB SEMUA */}
                     {activeTab === 'semua' && (
-                      <td className="py-4 px-8 uppercase text-xs font-bold text-slate-500">{record.petugas || '-'}</td>
+                      <td className="py-4 px-6 uppercase text-xs font-bold text-slate-500 whitespace-nowrap">{record.petugas || '-'}</td>
                     )}
 
                     {isAdmin && (
-                      <td className="py-4 px-8 text-right flex flex-col gap-2 items-end">
+                      <td className="py-4 px-6 text-right flex flex-col gap-2 items-end">
                         <button onClick={() => openDeleteModal(record)} className="bg-red-50 hover:bg-[#EA4335] text-[#EA4335] hover:text-white text-xs font-bold px-4 py-2 rounded-xl transition-all shadow-sm w-fit">Hapus</button>
                       </td>
                     )}
@@ -362,11 +409,14 @@ export default function Laporan() {
             <div className="fixed inset-0 bg-slate-900/70 z-[100] flex justify-center items-center p-4 backdrop-blur-sm animate-in fade-in">
               <div className="bg-white rounded-3xl w-full max-w-2xl max-h-[90vh] shadow-2xl flex flex-col animate-in zoom-in-95">
                 
-                <div className="p-6 bg-[#FCE8E6] border-b border-[#FAD2CF] shrink-0">
-                  <h3 className="font-extrabold text-[#C5221F] text-lg flex items-center gap-2">⚠️ Catat Tindak Lanjut & Ikat Pengganti</h3>
-                  <p className="text-xs text-[#C5221F]/80 font-medium mt-1">
-                    Anda sedang menyelesaikan error untuk SN: <span className="font-mono font-black">{tindakLanjutModal.record?.serialNumber}</span>
-                  </p>
+                <div className="p-6 bg-[#FCE8E6] border-b border-[#FAD2CF] shrink-0 flex justify-between items-center">
+                  <div>
+                    <h3 className="font-extrabold text-[#C5221F] text-lg flex items-center gap-2">⚠️ Catat Tindak Lanjut & Ikat Pengganti</h3>
+                    <p className="text-xs text-[#C5221F]/80 font-medium mt-1">
+                      Menyelesaikan error untuk SN: <span className="font-mono font-black">{tindakLanjutModal.record?.serialNumber}</span>
+                    </p>
+                  </div>
+                  <button onClick={() => { setTindakLanjutModal({ isOpen: false, record: null, note: '' }); setSelectedPengganti([]); }} className="w-8 h-8 rounded-full bg-white/50 text-red-800 flex items-center justify-center font-bold hover:bg-white transition-colors">✕</button>
                 </div>
 
                 <div className="p-6 overflow-y-auto space-y-6">
