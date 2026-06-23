@@ -414,8 +414,8 @@ export default function Dashboard() {
         
         {activeDashTab === 'grafik' && (
           <div className="flex gap-2 shrink-0 bg-white p-1 rounded-xl border border-slate-200 shadow-sm animate-in fade-in duration-300">
-             <button onClick={exportGlobalCSV} className="px-5 py-2.5 bg-[#107C41] hover:bg-[#0B5C30] text-white rounded-lg text-sm font-bold transition-all flex items-center gap-2">📥 Excel Global</button>
-             <button onClick={exportGlobalPDF} className="px-5 py-2.5 bg-[#C5221F] hover:bg-[#A50E0E] text-white rounded-lg text-sm font-bold transition-all flex items-center gap-2">📄 PDF Global</button>
+             <button onClick={exportGlobalCSV} className="px-5 py-2.5 bg-[#107C41] hover:bg-[#0B5C30] text-white rounded-lg text-sm font-bold transition-all flex items-center gap-2">📥 Export Excel</button>
+             <button onClick={exportGlobalPDF} className="px-5 py-2.5 bg-[#C5221F] hover:bg-[#A50E0E] text-white rounded-lg text-sm font-bold transition-all flex items-center gap-2">📄 Export PDF</button>
           </div>
         )}
       </div>
@@ -501,7 +501,7 @@ export default function Dashboard() {
                         </div>
 
                         <div className="bg-[#F3E8FD]/50 p-4 rounded-2xl border border-[#E9D5FF] flex flex-col justify-center shadow-sm relative overflow-hidden">
-                          <p className="text-[10px] font-extrabold text-[#7E22CE] uppercase tracking-widest">Wajib Pengganti</p>
+                          <p className="text-[10px] font-extrabold text-[#7E22CE] uppercase tracking-widest">Unit Pengganti</p>
                           <h3 className="text-2xl font-black text-[#7E22CE] mt-1">{unitData.totalPengganti.toLocaleString('id-ID')}</h3>
                           <p className="text-[10px] font-bold text-purple-400 mt-1">Total Unit Diganti</p>
                         </div>
