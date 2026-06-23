@@ -24,7 +24,6 @@ const formatWaktu = (isoString) => {
   return new Intl.DateTimeFormat('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(isoString));
 };
 
-// HELPER: Format Tanggal Pendek (contoh: 23 Jun)
 const formatTanggalPendek = (dateStr) => {
   if (!dateStr) return '';
   try {
@@ -34,7 +33,6 @@ const formatTanggalPendek = (dateStr) => {
   } catch (e) { return dateStr; }
 };
 
-// HELPER: Menggabungkan rentang tanggal
 const formatRangeTanggal = (start, end) => {
   const s = formatTanggalPendek(start);
   const e = formatTanggalPendek(end);
@@ -80,20 +78,14 @@ const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, per
   );
 };
 
-// KOMPONEN CUSTOM: Label Tanggal Miring Ke Atas di dalam Batang (ANTI-CRASH)
 const TiltedDateLabel = (props) => {
   try {
     const { x, y, width, height, value } = props;
-    
-    // Kembalikan <g></g> (grup kosong), BUKAN null, agar grafik tidak crash
     if (!value || typeof height !== 'number' || typeof width !== 'number' || typeof x !== 'number' || typeof y !== 'number') return <g></g>;
-    
-    // Jangan tampilkan jika batangnya terlalu pendek
     if (height < 40) return <g></g>; 
     
     const cx = x + width / 2;
     const cy = y + height / 2;
-    
     if (isNaN(cx) || isNaN(cy)) return <g></g>;
 
     return (
@@ -109,24 +101,24 @@ const TiltedDateLabel = (props) => {
         {value}
       </text>
     );
-  } catch (err) {
-    return <g></g>;
-  }
+  } catch (err) { return <g></g>; }
 };
 
-// --- KUSTOMISASI TOOLTIP ANTI GAGAL ---
+// --- KUSTOMISASI TOOLTIP ANTI GAGAL (SUDAH FIX 100% AMBIL ACTUAL DATA) ---
 const TrendTooltip = ({ active, payload, label, dataList }) => {
   try {
     if (active && payload && payload.length && dataList) {
-      const currentData = payload[0].payload;
-      const currentIndex = dataList.findIndex(d => d.namaTahap === currentData.namaTahap);
+      
+      // KUNCI PERBAIKAN: Cari data ASLI dari dataList menggunakan 'label' (Nama Tahap)
+      const actualData = dataList.find(d => String(d.namaTahap) === String(label)) || payload[0].payload;
+      const currentIndex = dataList.findIndex(d => String(d.namaTahap) === String(label));
       
       let growthLabel = '-';
       let growthPct = 0;
       
       if (currentIndex > 0) {
          const prev = dataList[currentIndex - 1].baseTarget;
-         const curr = currentData.baseTarget;
+         const curr = actualData.baseTarget;
          
          if (prev === 0 && curr === 0) growthPct = 0;
          else if (prev === 0) growthPct = 100;
@@ -138,30 +130,45 @@ const TrendTooltip = ({ active, payload, label, dataList }) => {
       }
 
       return (
-        <div className="bg-white/95 backdrop-blur-md p-4 border border-slate-200 rounded-2xl shadow-xl min-w-[150px] z-50">
+        <div className="bg-white/95 backdrop-blur-md p-4 border border-slate-200 rounded-2xl shadow-xl min-w-[200px] z-50">
           <p className="font-extrabold text-slate-800 text-xs mb-1 uppercase border-b border-slate-100 pb-2 flex justify-between items-center gap-4">
             <span>{label}</span>
-            {currentData.tanggalFormatted && <span className="font-mono text-[10px] text-blue-500 bg-blue-50 px-1.5 py-0.5 rounded">{currentData.tanggalFormatted}</span>}
+            {actualData.tanggalFormatted && <span className="font-mono text-[10px] text-blue-500 bg-blue-50 px-1.5 py-0.5 rounded">{actualData.tanggalFormatted}</span>}
           </p>
-          <p className="text-slate-500 text-xs font-medium mb-3 mt-2">Total Target: <span className="font-black text-[#1A73E8] text-sm">{currentData.baseTarget}</span></p>
+
+          <div className="mt-3 mb-4 flex items-center justify-between">
+            <p className="text-slate-500 text-[11px] font-bold uppercase">Target Alokasi</p>
+            <p className="font-black text-[#1A73E8] text-base">{actualData.baseTarget} <span className="text-xs font-semibold text-slate-400">Unit</span></p>
+          </div>
+          
+          <div className="flex gap-2 mb-4">
+            <div className="flex-1 bg-emerald-50 p-2.5 rounded-xl border border-emerald-200 flex flex-col items-center justify-center shadow-sm">
+              <p className="text-[9px] font-extrabold text-emerald-600 uppercase tracking-widest mb-1">Sesuai</p>
+              {/* SEKARANG MENGGUNAKAN ACTUALDATA, BUKAN CURRENTDATA! */}
+              <p className="text-xl font-black text-emerald-700 leading-none">{actualData.normalCount || 0}</p>
+            </div>
+            <div className="flex-1 bg-red-50 p-2.5 rounded-xl border border-red-200 flex flex-col items-center justify-center shadow-sm">
+              <p className="text-[9px] font-extrabold text-red-600 uppercase tracking-widest mb-1">Error</p>
+              {/* SEKARANG MENGGUNAKAN ACTUALDATA, BUKAN CURRENTDATA! */}
+              <p className="text-xl font-black text-red-700 leading-none">{actualData.errorCount || 0}</p>
+            </div>
+          </div>
           
           {currentIndex > 0 ? (
             <div className={`text-[10px] font-black px-2.5 py-1.5 rounded-lg border flex items-center justify-between gap-2 ${growthPct > 0 ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : growthPct < 0 ? 'bg-red-50 text-red-600 border-red-200' : 'bg-slate-50 text-slate-500 border-slate-200'}`}>
-              <span>Tren:</span>
+              <span>Tren Target:</span>
               <span>{growthLabel}</span>
             </div>
           ) : (
             <div className="text-[10px] font-bold text-slate-400 bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-100 text-center">
-              Titik Awal (Base)
+              Titik Awal Tren
             </div>
           )}
         </div>
       );
     }
     return null;
-  } catch (e) {
-    return null;
-  }
+  } catch (e) { return null; }
 };
 
 // --- KOMPONEN UTAMA DASHBOARD ---
@@ -194,7 +201,6 @@ export default function Dashboard() {
   const fetchDashboardData = async () => {
     setIsLoading(true);
     try {
-      // Fetch Master Data
       const unitsSnap = await getDocs(collection(db, 'master_units'));
       const unitsData = unitsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
       
@@ -204,14 +210,14 @@ export default function Dashboard() {
       const recordsSnap = await getDocs(query(collection(db, 'pemeriksaan_records'), orderBy('timestamp', 'desc')));
       const allRecordsData = recordsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-      // FETCH DATA TAHAP UNTUK MENGAMBIL TANGGALNYA
       const tahapsSnap = await getDocs(collection(db, 'master_tahaps'));
       const masterTahapsData = tahapsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
       
       setRecentRecords(allRecordsData); 
 
       const compiledData = unitsData.map(unit => {
-        const unitRecords = allRecordsData.filter(r => r.unit === unit.name);
+        // AMBIL SEMUA RECORD UNTUK UNIT INI (Case Insensitive)
+        const unitRecords = allRecordsData.filter(r => String(r.unit || '').trim().toUpperCase() === String(unit.name || '').trim().toUpperCase());
         const dynamicColor = getUnitColor(unit.name);
         
         let baseGrandTotal = Number(unit.grandTotal) || 0;
@@ -226,17 +232,22 @@ export default function Dashboard() {
            }
         });
 
+        const totalPemeriksaan = normalCount + totalErrorUnit; 
         const jumlahPenggantiWajib = totalErrorUnit * 10;
-        const sisa = Math.max(0, baseGrandTotal - normalCount);
-        const overTarget = Math.max(0, normalCount - baseGrandTotal);
-        const progressPercent = baseGrandTotal > 0 ? Math.round((normalCount / baseGrandTotal) * 100) : 0;
+        
+        const sisa = Math.max(0, baseGrandTotal - totalPemeriksaan);
+        const overTarget = Math.max(0, totalPemeriksaan - baseGrandTotal);
+        
+        const progressPercent = baseGrandTotal > 0 ? Math.round((totalPemeriksaan / baseGrandTotal) * 100) : 0;
         const sisaPercent = Math.max(0, 100 - progressPercent);
+
+        const pctSesuai = totalPemeriksaan > 0 ? Math.round((normalCount / totalPemeriksaan) * 100) : 0;
+        const pctError = totalPemeriksaan > 0 ? 100 - pctSesuai : 0; 
 
         const unitTargets = targetsData.filter(t => t.unit === unit.name);
         const listTahap = unitTargets.map(tahapTarget => {
           
-          // PENCOCOKAN DATA TANGGAL
-          const matchedTahap = masterTahapsData.find(th => th.name === tahapTarget.tahap);
+          const matchedTahap = masterTahapsData.find(th => String(th.name).trim().toUpperCase() === String(tahapTarget.tahap).trim().toUpperCase());
           const startDate = matchedTahap?.startDate || '';
           const endDate = matchedTahap?.endDate || '';
           const rawDate = matchedTahap?.tanggal || '';
@@ -250,37 +261,58 @@ export default function Dashboard() {
               tanggalFormatted = formatTanggalPendek(rawDate);
           }
 
+          // KUNCI: MENGHITUNG SESUAI & ERROR PER TAHAP DENGAN SANGAT AKURAT
+          const namaTahapTargetKunci = String(tahapTarget.tahap || '').trim().toLowerCase();
+          
+          let errorInTahap = 0;
+          let normalInTahap = 0;
+          
+          unitRecords.forEach(r => {
+             const tahapRecordKunci = String(r.tahap || '').trim().toLowerCase();
+             // Jika nama tahap di record SAMA PERSIS dengan target tahap ini
+             if (tahapRecordKunci === namaTahapTargetKunci) {
+                 if (isRecordError(r)) {
+                     errorInTahap += 1;
+                 } else if (!r.isPengganti) {
+                     normalInTahap += 1;
+                 }
+             }
+          });
+
           return { 
             namaTahap: tahapTarget.tahap, 
             baseTarget: Number(tahapTarget.jumlah) || 0,
-            tanggalFormatted: tanggalFormatted
+            tanggalFormatted: tanggalFormatted,
+            errorCount: errorInTahap,  
+            normalCount: normalInTahap 
           };
         });
 
-        // Urutkan tahap secara numerik
         listTahap.sort((a, b) => a.namaTahap.localeCompare(b.namaTahap, undefined, { numeric: true, sensitivity: 'base' }));
 
         return { 
           unitName: unit.name,
           color: dynamicColor,
           baseGrandTotal, 
+          totalPemeriksaan, 
           normalCount,
           totalError: totalErrorUnit, 
           totalPengganti: jumlahPenggantiWajib,
+          pctSesuai,        
+          pctError,         
           sisa, 
           overTarget,
           progressPercent,
           sisaPercent,
           pieData: [ 
-            { name: 'Telah Dikerjakan', value: normalCount, color: dynamicColor }, 
+            { name: 'Telah Diperiksa', value: totalPemeriksaan, color: dynamicColor }, 
             { name: 'Sisa Target', value: sisa, color: COLOR_SISA_LIGHT } 
           ], 
           listTahap 
         };
       });
 
-      // Filter: Tampilkan unit yang memiliki target/data
-      setDashboardData(compiledData.filter(u => u.baseGrandTotal > 0 || u.normalCount > 0 || u.totalError > 0 || u.listTahap.length > 0));
+      setDashboardData(compiledData.filter(u => u.baseGrandTotal > 0 || u.totalPemeriksaan > 0 || u.listTahap.length > 0));
     } catch (err) { console.error(err); } finally { setIsLoading(false); }
   };
 
@@ -428,48 +460,53 @@ export default function Dashboard() {
                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
                     
                     <div className="lg:col-span-2 flex flex-col gap-6">
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 h-full">
-                        
-                        <div className="bg-[#4285F4] text-white p-6 rounded-3xl border border-blue-500 flex flex-col justify-center shadow-md relative overflow-hidden">
+                      
+                      {/* BARIS ATAS: TOTAL & SISA */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="bg-[#4285F4] text-white p-6 rounded-3xl border border-blue-500 flex flex-col justify-center shadow-md relative overflow-hidden h-36">
                           <div className="absolute -right-4 -top-4 text-7xl opacity-10">🎯</div>
-                          <p className="text-xs font-extrabold text-blue-100 uppercase tracking-widest">Total Target</p>
+                          <p className="text-xs font-extrabold text-blue-100 uppercase tracking-widest">Target Keseluruhan</p>
                           <div className="flex items-baseline gap-2 mt-2">
                             <h3 className="text-5xl font-black text-white">{unitData.baseGrandTotal.toLocaleString('id-ID')}</h3>
                           </div>
-                          {unitData.overTarget > 0 && (
-                            <span className="text-xs font-black text-blue-600 bg-white px-2 py-1 rounded-lg mt-3 w-fit shadow-sm">
-                              +{unitData.overTarget} Over Target
-                            </span>
-                          )}
                         </div>
 
-                        <div className="flex flex-col gap-4 col-span-2">
-                           <div className="grid grid-cols-2 gap-4 flex-1">
-                             <div className="bg-[#34A853] text-white p-4 rounded-2xl border border-green-600 flex flex-col justify-center shadow-md">
-                               <p className="text-[10px] font-extrabold text-green-100 uppercase tracking-widest">Telah Dikerjakan</p>
-                               <h3 className="text-3xl font-black text-white mt-1">{unitData.normalCount.toLocaleString('id-ID')}</h3>
-                               <p className="text-[10px] font-bold text-green-50 mt-1">{unitData.progressPercent}% dari Target</p>
-                             </div>
-                             
-                             <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 flex flex-col justify-center shadow-sm">
-                               <p className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">Sisa Pekerjaan</p>
-                               <h3 className="text-3xl font-black text-slate-700 mt-1">{unitData.sisa.toLocaleString('id-ID')}</h3>
-                               <p className="text-[10px] font-bold text-slate-400 mt-1">{unitData.sisaPercent}% Sisa Target</p>
-                             </div>
-                           </div>
-                           <div className="grid grid-cols-2 gap-4 flex-1">
-                             <div className="bg-[#FCE8E6]/50 p-4 rounded-2xl border border-[#FAD2CF] flex flex-col justify-center shadow-sm">
-                               <p className="text-[10px] font-extrabold text-[#C5221F] uppercase tracking-widest">Jumlah Error</p>
-                               <h3 className="text-2xl font-black text-[#C5221F] mt-1">{unitData.totalError.toLocaleString('id-ID')}</h3>
-                             </div>
-                             <div className="bg-[#F3E8FD]/50 p-4 rounded-2xl border border-[#E9D5FF] flex flex-col justify-center shadow-sm">
-                               <p className="text-[10px] font-extrabold text-[#7E22CE] uppercase tracking-widest">Wajib Pengganti</p>
-                               <h3 className="text-2xl font-black text-[#7E22CE] mt-1">{unitData.totalPengganti.toLocaleString('id-ID')}</h3>
-                             </div>
-                           </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="bg-[#34A853] text-white p-4 rounded-2xl border border-green-600 flex flex-col justify-center shadow-md">
+                            <p className="text-[10px] font-extrabold text-green-100 uppercase tracking-widest leading-tight mb-1">Telah Diperiksa</p>
+                            <h3 className="text-3xl font-black text-white">{unitData.totalPemeriksaan.toLocaleString('id-ID')}</h3>
+                            <p className="text-[10px] font-bold text-green-50 mt-1">{unitData.progressPercent}% dari Target</p>
+                          </div>
+                          
+                          <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 flex flex-col justify-center shadow-sm">
+                            <p className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest leading-tight mb-1">Sisa Target</p>
+                            <h3 className="text-3xl font-black text-slate-700">{unitData.sisa.toLocaleString('id-ID')}</h3>
+                            <p className="text-[10px] font-bold text-slate-400 mt-1">{unitData.sisaPercent}% Sisa</p>
+                          </div>
                         </div>
-
                       </div>
+
+                      {/* BARIS BAWAH: RINCIAN SESUAI, ERROR, PENGGANTI */}
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 h-full">
+                        <div className="bg-blue-50/50 p-4 rounded-2xl border border-blue-100 flex flex-col justify-center shadow-sm">
+                          <p className="text-[10px] font-extrabold text-blue-600 uppercase tracking-widest">Kondisi Sesuai</p>
+                          <h3 className="text-2xl font-black text-blue-700 mt-1">{unitData.normalCount.toLocaleString('id-ID')}</h3>
+                          <p className="text-[10px] font-bold text-blue-500 mt-1">{unitData.pctSesuai}% dari Total Diperiksa</p>
+                        </div>
+
+                        <div className="bg-[#FCE8E6]/50 p-4 rounded-2xl border border-[#FAD2CF] flex flex-col justify-center shadow-sm">
+                          <p className="text-[10px] font-extrabold text-[#C5221F] uppercase tracking-widest">Tidak Sesuai</p>
+                          <h3 className="text-2xl font-black text-[#C5221F] mt-1">{unitData.totalError.toLocaleString('id-ID')}</h3>
+                          <p className="text-[10px] font-bold text-red-400 mt-1">{unitData.pctError}% dari Total Diperiksa</p>
+                        </div>
+
+                        <div className="bg-[#F3E8FD]/50 p-4 rounded-2xl border border-[#E9D5FF] flex flex-col justify-center shadow-sm relative overflow-hidden">
+                          <p className="text-[10px] font-extrabold text-[#7E22CE] uppercase tracking-widest">Wajib Pengganti</p>
+                          <h3 className="text-2xl font-black text-[#7E22CE] mt-1">{unitData.totalPengganti.toLocaleString('id-ID')}</h3>
+                          <p className="text-[10px] font-bold text-purple-400 mt-1">Total Unit Diganti</p>
+                        </div>
+                      </div>
+
                     </div>
 
                     <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm flex flex-col justify-center items-center relative">
@@ -487,8 +524,8 @@ export default function Dashboard() {
                         </div>
                       </div>
                       <div className="flex flex-wrap justify-center gap-x-5 gap-y-2 mt-6">
-                        <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full" style={{ backgroundColor: unitData.color }}></span><span className="text-[11px] font-bold text-slate-600 uppercase tracking-wide">Selesai</span></div>
-                        <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-[#F1F3F4] border border-slate-300"></span><span className="text-[11px] font-bold text-slate-600 uppercase tracking-wide">Sisa</span></div>
+                        <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full" style={{ backgroundColor: unitData.color }}></span><span className="text-[11px] font-bold text-slate-600 uppercase tracking-wide">Telah Diperiksa</span></div>
+                        <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-[#F1F3F4] border border-slate-300"></span><span className="text-[11px] font-bold text-slate-600 uppercase tracking-wide">Sisa Target</span></div>
                       </div>
                     </div>
                   </div>
@@ -516,10 +553,8 @@ export default function Dashboard() {
                             
                             <RechartsTooltip cursor={{fill: '#F8F9FA'}} content={(props) => <TrendTooltip {...props} dataList={unitData.listTahap} />} />
                             
-                            {/* SEMUA BATANG MENGGUNAKAN 1 WARNA BIRU GOOGLE GRADIENT */}
                             <Bar dataKey="baseTarget" name="Total Target" fill="url(#colorGoogleBlueGrad)" radius={[6, 6, 0, 0]} maxBarSize={90}>
                               <LabelList dataKey="baseTarget" position="top" style={{ fontSize: '11px', fill: '#64748B', fontWeight: '900' }} />
-                              {/* PENYISIPAN TANGGAL MIRING YANG SUDAH DILINDUNGI */}
                               <LabelList dataKey="tanggalFormatted" content={<TiltedDateLabel />} />
                             </Bar>
 
