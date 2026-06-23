@@ -24,8 +24,18 @@ export default function Admin() {
   const [isLoading, setIsLoading] = useState(true);
 
   const [newUnit, setNewUnit] = useState('');
-  const [newTahap, setNewTahap] = useState('');
   
+  // STATE TAHAP (RENTANG TANGGAL)
+  const [newTahap, setNewTahap] = useState('');
+  const [newTahapStartDate, setNewTahapStartDate] = useState(''); 
+  const [newTahapEndDate, setNewTahapEndDate] = useState(''); 
+  
+  // STATE EDIT TAHAP
+  const [editingTahapId, setEditingTahapId] = useState(null);
+  const [editTahapName, setEditTahapName] = useState('');
+  const [editTahapStartDate, setEditTahapStartDate] = useState('');
+  const [editTahapEndDate, setEditTahapEndDate] = useState('');
+
   const [newUserRole, setNewUserRole] = useState('pemeriksa');
   const [newUserTahap, setNewUserTahap] = useState('');
   const [newUsername, setNewUsername] = useState('');
@@ -51,7 +61,6 @@ export default function Admin() {
       const gt = {}; unitData.forEach(u => gt[u.id] = u.grandTotal || 0); setUnitGrandTotals(gt);
       
       const tahapSnap = await getDocs(collection(db, 'master_tahaps'));
-      // FIX SORTING NUMERIK: Tahap 1, 2, ..., 10, 11
       const sortedTahaps = tahapSnap.docs
         .map(d => ({ id: d.id, ...d.data() }))
         .sort((a,b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
@@ -89,7 +98,44 @@ export default function Admin() {
   };
 
   const handleAddUnit = async (e) => { e.preventDefault(); if (!newUnit) return; await addDoc(collection(db, 'master_units'), { name: newUnit.trim().toUpperCase(), grandTotal: 0 }); logActivity(user.username, `Menambahkan Unit: ${newUnit.trim().toUpperCase()}`); setNewUnit(''); fetchAllData(); };
-  const handleAddTahap = async (e) => { e.preventDefault(); if (!newTahap) return; await addDoc(collection(db, 'master_tahaps'), { name: newTahap.trim() }); logActivity(user.username, `Menambahkan Tahap: ${newTahap.trim()}`); setNewTahap(''); fetchAllData(); };
+  
+  // TAMBAH TAHAP BARU DENGAN RENTANG TANGGAL
+  const handleAddTahap = async (e) => { 
+    e.preventDefault(); 
+    if (!newTahap) return; 
+    await addDoc(collection(db, 'master_tahaps'), { 
+      name: newTahap.trim(), 
+      startDate: newTahapStartDate,
+      endDate: newTahapEndDate
+    }); 
+    logActivity(user.username, `Menambahkan Tahap: ${newTahap.trim()}`); 
+    setNewTahap(''); setNewTahapStartDate(''); setNewTahapEndDate('');
+    fetchAllData(); 
+  };
+
+  // LOGIKA EDIT TAHAP
+  const startEditTahap = (t) => {
+    setEditingTahapId(t.id);
+    setEditTahapName(t.name);
+    // Backward compatibility (kalau data lama cuma punya "tanggal")
+    setEditTahapStartDate(t.startDate || t.tanggal || '');
+    setEditTahapEndDate(t.endDate || '');
+  };
+
+  const handleSaveEditTahap = async () => {
+    if (!editTahapName) return;
+    try {
+      await updateDoc(doc(db, 'master_tahaps', editingTahapId), {
+        name: editTahapName.trim(),
+        startDate: editTahapStartDate,
+        endDate: editTahapEndDate,
+        tanggal: '' // Reset tanggal lama biar rapi pake format baru
+      });
+      logActivity(user.username, `Mengedit Tahap: ${editTahapName}`);
+      setEditingTahapId(null);
+      fetchAllData();
+    } catch (e) { console.error(e); alert("Gagal menyimpan perubahan!"); }
+  };
 
   const handleAddUser = async (e) => { 
     e.preventDefault(); if (!newUsername || !newPassword) return;
@@ -158,7 +204,64 @@ export default function Admin() {
           {activeTab === 'master' && (
              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                <div className="bg-white p-6 md:p-8 rounded-3xl border border-slate-100 shadow-[0_4px_24px_rgba(0,0,0,0.04)]"><h2 className="font-extrabold mb-6 text-slate-800 text-lg flex items-center gap-2"><span className="text-xl">📦</span> Kelola Unit / Kategori</h2><form onSubmit={handleAddUnit} className="flex flex-col sm:flex-row gap-3 mb-8 bg-slate-50 p-4 rounded-2xl border border-slate-100"><input type="text" value={newUnit} onChange={e=>setNewUnit(e.target.value)} placeholder="Contoh: BRACKET" className="flex-1 border-0 bg-white shadow-sm p-3.5 rounded-xl text-sm outline-none focus:ring-2 focus:ring-[#4285F4]/20 transition-all font-bold text-slate-700 uppercase" required/><button className="bg-[#1A73E8] hover:bg-[#1557B0] text-white py-3.5 sm:py-0 px-6 rounded-xl text-sm font-bold transition-colors shadow-sm shrink-0">Tambah</button></form><div className="space-y-2">{units.map(u => (<div key={u.id} className="flex justify-between items-center p-4 bg-white border border-slate-100 rounded-2xl hover:border-blue-200 hover:shadow-sm transition-all group"><span className="text-sm font-extrabold text-slate-700">{u.name}</span><button onClick={()=>confirmDelete('master_units', u.id, u.name)} className="w-8 h-8 flex items-center justify-center rounded-full bg-red-50 text-[#EA4335] sm:opacity-0 sm:group-hover:opacity-100 hover:bg-[#EA4335] hover:text-white transition-all">✕</button></div>))}{units.length === 0 && <p className="text-center text-slate-400 text-sm italic py-4">Belum ada unit terdaftar.</p>}</div></div>
-               <div className="bg-white p-6 md:p-8 rounded-3xl border border-slate-100 shadow-[0_4px_24px_rgba(0,0,0,0.04)]"><h2 className="font-extrabold mb-6 text-slate-800 text-lg flex items-center gap-2"><span className="text-xl">📂</span> Kelola Tahap</h2><form onSubmit={handleAddTahap} className="flex flex-col sm:flex-row gap-3 mb-8 bg-slate-50 p-4 rounded-2xl border border-slate-100"><input type="text" value={newTahap} onChange={e=>setNewTahap(e.target.value)} placeholder="Contoh: TAHAP 1" className="flex-1 border-0 bg-white shadow-sm p-3.5 rounded-xl text-sm outline-none focus:ring-2 focus:ring-[#4285F4]/20 transition-all font-bold text-slate-700 uppercase" required/><button className="bg-[#1A73E8] hover:bg-[#1557B0] text-white py-3.5 sm:py-0 px-6 rounded-xl text-sm font-bold transition-colors shadow-sm shrink-0">Tambah</button></form><div className="space-y-2">{tahaps.map(t => (<div key={t.id} className="flex justify-between items-center p-4 bg-white border border-slate-100 rounded-2xl hover:border-blue-200 hover:shadow-sm transition-all group"><span className="text-sm font-extrabold text-slate-700">{t.name}</span><button onClick={()=>confirmDelete('master_tahaps', t.id, t.name)} className="w-8 h-8 flex items-center justify-center rounded-full bg-red-50 text-[#EA4335] sm:opacity-0 sm:group-hover:opacity-100 hover:bg-[#EA4335] hover:text-white transition-all">✕</button></div>))}{tahaps.length === 0 && <p className="text-center text-slate-400 text-sm italic py-4">Belum ada tahap terdaftar.</p>}</div></div>
+               
+               {/* KELOLA TAHAP DENGAN FITUR EDIT & RENTANG TANGGAL */}
+               <div className="bg-white p-6 md:p-8 rounded-3xl border border-slate-100 shadow-[0_4px_24px_rgba(0,0,0,0.04)]">
+                 <h2 className="font-extrabold mb-6 text-slate-800 text-lg flex items-center gap-2"><span className="text-xl">📂</span> Kelola Tahap</h2>
+                 
+                 <form onSubmit={handleAddTahap} className="flex flex-col gap-3 mb-8 bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                   <input type="text" value={newTahap} onChange={e=>setNewTahap(e.target.value)} placeholder="Nama Tahap (Contoh: TAHAP 1)" className="w-full border-0 bg-white shadow-sm p-3.5 rounded-xl text-sm outline-none focus:ring-2 focus:ring-[#4285F4]/20 transition-all font-bold text-slate-700 uppercase" required/>
+                   <div className="flex flex-col sm:flex-row gap-2 items-center">
+                     <span className="text-[10px] font-bold text-slate-400 uppercase w-full sm:w-12">Mulai</span>
+                     <input type="date" value={newTahapStartDate} onChange={e=>setNewTahapStartDate(e.target.value)} className="flex-1 w-full sm:w-auto border-0 bg-white shadow-sm p-3 rounded-xl text-sm outline-none focus:ring-2 focus:ring-[#4285F4]/20 transition-all font-medium text-slate-700" />
+                     <span className="text-[10px] font-bold text-slate-400 uppercase w-full sm:w-16 sm:text-center">Selesai</span>
+                     <input type="date" value={newTahapEndDate} onChange={e=>setNewTahapEndDate(e.target.value)} className="flex-1 w-full sm:w-auto border-0 bg-white shadow-sm p-3 rounded-xl text-sm outline-none focus:ring-2 focus:ring-[#4285F4]/20 transition-all font-medium text-slate-700" />
+                   </div>
+                   <button className="bg-[#1A73E8] hover:bg-[#1557B0] text-white py-3.5 px-6 rounded-xl text-sm font-bold transition-colors shadow-sm w-full mt-1">Tambah Tahap</button>
+                 </form>
+
+                 <div className="space-y-3">
+                   {tahaps.map(t => {
+                     // Tampilkan rentang tanggal cantik
+                     let dateText = '';
+                     if (t.startDate && t.endDate) dateText = `${t.startDate} s/d ${t.endDate}`;
+                     else if (t.startDate) dateText = `Mulai: ${t.startDate}`;
+                     else if (t.endDate) dateText = `Selesai: ${t.endDate}`;
+                     else if (t.tanggal) dateText = t.tanggal; // Fallback data lama
+                     
+                     return (
+                       <div key={t.id} className="p-4 bg-white border border-slate-100 rounded-2xl hover:border-blue-200 hover:shadow-sm transition-all group">
+                         {editingTahapId === t.id ? (
+                           <div className="flex flex-col gap-3 animate-in fade-in">
+                             <input type="text" value={editTahapName} onChange={e=>setEditTahapName(e.target.value)} className="border-2 border-blue-400 p-2 rounded-xl text-sm font-bold uppercase outline-none focus:bg-blue-50 transition-colors"/>
+                             <div className="flex gap-2 items-center">
+                               <input type="date" value={editTahapStartDate} onChange={e=>setEditTahapStartDate(e.target.value)} className="border-2 border-blue-200 p-2 rounded-xl text-xs flex-1 outline-none focus:border-blue-400"/>
+                               <span className="text-slate-400 font-bold">-</span>
+                               <input type="date" value={editTahapEndDate} onChange={e=>setEditTahapEndDate(e.target.value)} className="border-2 border-blue-200 p-2 rounded-xl text-xs flex-1 outline-none focus:border-blue-400"/>
+                             </div>
+                             <div className="flex gap-2 mt-1">
+                               <button onClick={handleSaveEditTahap} className="bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2 rounded-xl text-xs font-bold flex-1 transition-colors shadow-sm">Simpan</button>
+                               <button onClick={()=>setEditingTahapId(null)} className="bg-slate-100 hover:bg-slate-200 text-slate-600 px-4 py-2 rounded-xl text-xs font-bold flex-1 transition-colors">Batal</button>
+                             </div>
+                           </div>
+                         ) : (
+                           <div className="flex justify-between items-center">
+                             <div className="flex flex-col">
+                               <span className="text-sm font-extrabold text-slate-800 uppercase">{t.name}</span>
+                               {dateText && <span className="text-[10px] font-bold text-[#1A73E8] bg-blue-50 px-2 py-0.5 rounded border border-blue-100 mt-1.5 w-fit">{dateText}</span>}
+                             </div>
+                             <div className="flex gap-1.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all">
+                               <button onClick={()=>startEditTahap(t)} className="w-8 h-8 flex items-center justify-center rounded-full bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white transition-all text-xs" title="Edit Tahap">✏️</button>
+                               <button onClick={()=>confirmDelete('master_tahaps', t.id, t.name)} className="w-8 h-8 flex items-center justify-center rounded-full bg-red-50 text-[#EA4335] hover:bg-[#EA4335] hover:text-white transition-all text-xs" title="Hapus">✕</button>
+                             </div>
+                           </div>
+                         )}
+                       </div>
+                     );
+                   })}
+                   {tahaps.length === 0 && <p className="text-center text-slate-400 text-sm italic py-4">Belum ada tahap terdaftar.</p>}
+                 </div>
+               </div>
              </div>
           )}
 

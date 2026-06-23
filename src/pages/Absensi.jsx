@@ -21,6 +21,10 @@ export default function Absensi() {
   const [uniquePastUsers, setUniquePastUsers] = useState([]);
   const [isTarikSubmitting, setIsTarikSubmitting] = useState(false);
 
+  // STATE UNTUK FILTER TABEL REKAP (LEADERBOARD)
+  const [searchName, setSearchName] = useState('');
+  const [filterTahap, setFilterTahap] = useState('');
+
   useEffect(() => {
     fetchData();
   }, []);
@@ -141,6 +145,54 @@ export default function Absensi() {
     return new Date(isoString).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
   };
 
+  // --- LOGIKA PENGHITUNGAN REKAP ABSENSI KINERJA ---
+  const getRekapAbsensiData = () => {
+    const mapRekap = {};
+
+    absensiList.forEach(absen => {
+      const nama = absen.namaLengkap ? absen.namaLengkap.toUpperCase().trim() : 'TANPA NAMA';
+      const tahap = absen.tahap || 'Tanpa Tahap';
+
+      if (!mapRekap[nama]) {
+        mapRekap[nama] = {
+          namaLengkap: absen.namaLengkap.toUpperCase(),
+          instansi: absen.instansi || '-',
+          jabatan: absen.jabatan || '-',
+          listTahap: []
+        };
+      }
+
+      // Pastikan nama tahap tidak duplikat di array (berjaga-jaga kalau dia absen dobel di 1 tahap)
+      if (!mapRekap[nama].listTahap.includes(tahap)) {
+        mapRekap[nama].listTahap.push(tahap);
+      }
+    });
+
+    // Ubah ke Array
+    let rekapArray = Object.values(mapRekap);
+
+    // Urutkan tahap di masing-masing peserta secara numerik
+    rekapArray.forEach(peserta => {
+      peserta.listTahap.sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+      peserta.totalHadir = peserta.listTahap.length;
+    });
+
+    // --- FILTER PENCARIAN & DROPDOWN ---
+    if (searchName) {
+      rekapArray = rekapArray.filter(p => p.namaLengkap.includes(searchName.toUpperCase()));
+    }
+    if (filterTahap) {
+      rekapArray = rekapArray.filter(p => p.listTahap.includes(filterTahap));
+    }
+
+    // Sort by Total Hadir terbanyak
+    rekapArray.sort((a, b) => b.totalHadir - a.totalHadir);
+
+    return rekapArray;
+  };
+
+  const rekapAbsensiData = getRekapAbsensiData();
+
   return (
     <div className="max-w-7xl mx-auto pb-20 font-sans relative">
       
@@ -221,8 +273,8 @@ export default function Absensi() {
 
       <div className="mb-8 flex flex-col md:flex-row justify-between items-start md:items-end gap-4 print:hidden">
         <div>
-          <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Data Kehadiran</h1>
-          <p className="text-slate-500 mt-1">Daftar kartu per tahap diambil otomatis dari konfigurasi sistem.</p>
+          <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Data Absensi & Kehadiran</h1>
+          <p className="text-slate-500 mt-1">Pantau rekapitulasi kehadiran anggota dan daftar absen per tahap.</p>
         </div>
         <div className="flex gap-2 flex-wrap">
           {/* TOMBOL TARIK DATA */}
@@ -237,9 +289,121 @@ export default function Absensi() {
           </button>
         </div>
       </div>
-      
+
+      {/* --- BAGIAN 1: TABEL REKAPITULASI KEHADIRAN (LEADERBOARD) --- */}
+      <div className="bg-white p-6 md:p-8 rounded-3xl shadow-[0_4px_24px_rgba(0,0,0,0.04)] border border-slate-50 mb-10 print:hidden">
+        
+        <div className="mb-6 pb-4 border-b border-slate-100 flex flex-col md:flex-row md:justify-between md:items-end gap-4">
+          <div>
+            <h2 className="text-2xl font-black text-slate-800 tracking-tight flex items-center gap-2">
+              <span className="text-3xl">📊</span> Rekap Kehadiran Anggota
+            </h2>
+            <p className="text-slate-500 text-sm mt-1">Dihitung otomatis berdasarkan data absensi masuk.</p>
+          </div>
+        </div>
+
+        {/* AREA FILTER */}
+        <div className="flex flex-wrap items-center gap-3 mb-6 bg-slate-50/50 p-2 md:p-3 rounded-2xl border border-slate-100">
+           <div className="flex-grow min-w-[200px]">
+              <input 
+                type="text" 
+                placeholder="🔍 Cari Nama / Instansi..." 
+                value={searchName} 
+                onChange={(e) => setSearchName(e.target.value)} 
+                className="px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-medium outline-none focus:border-[#4285F4] text-slate-800 w-full shadow-sm" 
+              />
+           </div>
+           
+           <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap w-full sm:w-auto">
+             <select 
+               value={filterTahap} 
+               onChange={(e) => setFilterTahap(e.target.value)} 
+               className="px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-[#4285F4] text-slate-700 w-full sm:w-48 cursor-pointer shadow-sm shrink-0"
+             >
+               <option value="">📋 Semua Tahap</option>
+               {tahaps.map(t => (
+                 <option key={t} value={t}>{t}</option>
+               ))}
+             </select>
+
+             <button 
+               onClick={() => { setSearchName(''); setFilterTahap(''); }} 
+               className="px-4 py-2.5 bg-white text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-xl text-xs font-bold transition-all border border-slate-200 shadow-sm shrink-0"
+             >
+               🗑️ Reset
+             </button>
+           </div>
+        </div>
+
+        {/* AREA TABEL REKAP */}
+        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm max-h-[500px] overflow-y-auto relative">
+          <table className="w-full text-left text-xs text-slate-600 min-w-max">
+            <thead className="bg-[#F8F9FA] border-b border-slate-200 sticky top-0 z-10 shadow-sm">
+               <tr className="font-bold text-slate-500 uppercase tracking-wider">
+                 <th className="py-4 px-6 w-16 text-center">No</th>
+                 <th className="py-4 px-6">Nama Lengkap</th>
+                 <th className="py-4 px-6">Instansi & Jabatan</th>
+                 <th className="py-4 px-6">Rincian Kehadiran Tahap</th>
+                 <th className="py-4 px-6 text-center w-32">Total Ikut</th>
+               </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {isLoading ? (
+                <tr><td colSpan="5" className="py-16 text-center text-[#1A73E8] font-bold animate-pulse">Memuat rekapitulasi data...</td></tr>
+              ) : rekapAbsensiData.length === 0 ? (
+                 <tr><td colSpan="5" className="py-16 text-center text-slate-400 font-medium text-sm">Tidak ada data anggota sesuai filter.</td></tr>
+              ) : (
+                 rekapAbsensiData.map((item, index) => (
+                   <tr key={item.namaLengkap} className="hover:bg-blue-50/30 transition-colors">
+                     
+                     <td className="py-4 px-6 text-center font-black text-slate-400">
+                       {index + 1}
+                     </td>
+                     
+                     <td className="py-4 px-6 font-extrabold text-[#1A73E8] tracking-wide uppercase">
+                       {item.namaLengkap}
+                     </td>
+
+                     <td className="py-4 px-6">
+                       <div className="font-bold text-slate-700 uppercase">{item.instansi}</div>
+                       <div className="text-xs text-slate-500 mt-0.5 uppercase">{item.jabatan}</div>
+                     </td>
+                     
+                     <td className="py-4 px-6">
+                       <div className="flex flex-wrap gap-2">
+                         {item.listTahap.map((namaTahap, idx) => {
+                           const isHighlighted = filterTahap && filterTahap === namaTahap;
+                           return (
+                             <span 
+                               key={idx} 
+                               className={`px-3 py-1.5 rounded-lg border text-[10px] font-black tracking-wide whitespace-nowrap shadow-sm transition-all
+                                 ${isHighlighted ? 'bg-amber-100 text-amber-800 border-amber-300 scale-105' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}
+                             >
+                               ✓ {namaTahap}
+                             </span>
+                           );
+                         })}
+                       </div>
+                     </td>
+
+                     <td className="py-4 px-6 text-center">
+                        <div className="bg-slate-800 text-white px-3 py-1.5 rounded-lg font-black text-sm shadow-sm inline-block min-w-[60px]">
+                          {item.totalHadir}x
+                        </div>
+                     </td>
+
+                   </tr>
+                 ))
+              )}
+            </tbody>
+          </table>
+        </div>
+
+      </div>
+
+      {/* --- BAGIAN 2: DAFTAR ABSENSI DETAIL (BAWAAN) --- */}
       <div className="space-y-4 print:hidden">
-        {isLoading ? <p className="text-center text-blue-500 py-10 animate-pulse font-medium">Memuat data...</p> : (
+        {isLoading ? <p className="text-center text-blue-500 py-10 animate-pulse font-medium">Memuat data absensi...</p> : (
           tahaps.map((tahap) => {
             const pesertaDiTahapIni = absensiList.filter(item => item.tahap === tahap);
             return (
@@ -275,12 +439,12 @@ export default function Absensi() {
                             <tr key={item.id} onClick={() => setSelectedBiodata(item)} className="hover:bg-blue-50/50 transition-colors cursor-pointer" title="Klik untuk buka Format Biodata A4">
                               <td className="py-4 px-6 text-center font-bold text-slate-400">{index + 1}</td>
                               <td className="py-4 px-6">
-                                <div className="font-extrabold text-[#1A73E8]">{item.namaLengkap}</div>
+                                <div className="font-extrabold text-[#1A73E8] uppercase">{item.namaLengkap}</div>
                                 <div className="text-xs text-slate-500 mt-0.5">{item.umur || '-'} Tahun</div>
                               </td>
                               <td className="py-4 px-6">
-                                <div className="font-bold text-slate-700">{item.instansi}</div>
-                                <div className="text-xs text-slate-500 mt-0.5">{item.jabatan}</div>
+                                <div className="font-bold text-slate-700 uppercase">{item.instansi}</div>
+                                <div className="text-xs text-slate-500 mt-0.5 uppercase">{item.jabatan}</div>
                               </td>
                               <td className="py-4 px-6 font-semibold text-slate-500 text-xs">
                                 {formatTanggalClean(item.timestamp)}
