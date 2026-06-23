@@ -514,7 +514,7 @@ export default function Dashboard() {
                    {dashboardData.map((unit, idx) => (
                      <div key={idx} className="bg-slate-50 p-4 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all">
                         <h3 className="font-black text-slate-700 text-center mb-4 uppercase tracking-widest" style={{ color: unit.color }}>{unit.unitName}</h3>
-                        <div className="flex gap-4">
+                        <div className="flex flex-col sm:flex-row gap-4">
                            <LiquidCard percent={unit.progressPercent} count={unit.totalPemeriksaan} title="Telah Diperiksa" color="#4285F4" />
                            <LiquidCard percent={unit.sisaPercent} count={unit.sisa} title="Sisa Target" color="#FBBC05" />
                         </div>
