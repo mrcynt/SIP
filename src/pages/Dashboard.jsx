@@ -6,6 +6,68 @@ import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
+// --- INJEKSI CSS GLOBAL UNTUK ANIMASI GELOMBANG AIR ---
+const LiquidStyles = () => (
+  <style>{`
+    @keyframes wave-liquid {
+      0% { transform: translateX(0); }
+      100% { transform: translateX(-50%); }
+    }
+    .animate-wave-liquid {
+      animation: wave-liquid 3s linear infinite;
+    }
+    .animate-wave-liquid-slow {
+      animation: wave-liquid 5s linear infinite;
+    }
+    .liquid-hover-effect {
+      transition: all 0.5s ease-in-out;
+    }
+    .group:hover .liquid-hover-effect {
+      filter: brightness(1.1) saturate(1.2);
+    }
+  `}</style>
+);
+
+// --- KOMPONEN KARTU AIR INTERAKTIF (DENGAN JUMLAH & PERSENTASE) ---
+const LiquidCard = ({ percent, count, title, color }) => {
+  const safePercent = Math.min(100, Math.max(0, percent));
+  
+  return (
+    <div className="relative flex-1 h-44 bg-slate-50 rounded-2xl border border-slate-200 overflow-hidden shadow-inner group cursor-pointer">
+      {/* Pembungkus Air */}
+      <div className="absolute bottom-0 left-0 w-full transition-all duration-1000 ease-in-out liquid-hover-effect" style={{ height: `${safePercent}%` }}>
+         {/* Gelombang Atas (Hanya muncul jika air > 0 dan < 100) */}
+         {safePercent > 0 && safePercent < 100 && (
+            <div className="absolute top-0 left-0 w-[200%] h-8 -mt-[31px] overflow-hidden pointer-events-none z-0">
+               <svg viewBox="0 0 1200 120" preserveAspectRatio="none" className="absolute bottom-0 w-full h-full animate-wave-liquid opacity-60" style={{ fill: color }}>
+                  <path d="M0,60 C150,120 450,0 600,60 C750,120 1050,0 1200,60 L1200,120 L0,120 Z"></path>
+               </svg>
+               <svg viewBox="0 0 1200 120" preserveAspectRatio="none" className="absolute bottom-0 w-full h-full animate-wave-liquid-slow opacity-40" style={{ fill: color }}>
+                  <path d="M0,60 C150,0 450,120 600,60 C750,0 1050,120 1200,60 L1200,120 L0,120 Z"></path>
+               </svg>
+            </div>
+         )}
+         {/* Massa Air Solid */}
+         <div className="absolute top-0 bottom-0 left-0 w-full z-0" style={{ backgroundColor: color }}></div>
+      </div>
+      
+      {/* Teks Foregound Tahan Air (Frosted Glass Badge) */}
+      <div className="absolute inset-0 flex flex-col items-center justify-center z-10 pointer-events-none p-3">
+         <div className="bg-white/60 backdrop-blur-md w-full py-3 rounded-2xl flex flex-col items-center border border-white/80 shadow-sm transition-transform duration-300 group-hover:scale-105">
+            <div className="flex items-baseline gap-1.5 mb-1">
+               <h4 className="text-3xl font-black text-slate-900 leading-none">{count.toLocaleString('id-ID')}</h4>
+               <span className="text-[10px] font-bold text-slate-800 uppercase">Unit</span>
+            </div>
+            <div className="bg-slate-900/10 px-2.5 py-0.5 rounded text-slate-900 font-black text-sm mb-1.5 shadow-sm border border-slate-900/5">
+               {safePercent}%
+            </div>
+            <p className="text-[9px] font-extrabold text-slate-800 uppercase tracking-widest text-center leading-tight">{title}</p>
+         </div>
+      </div>
+    </div>
+  );
+};
+
 // --- FUNGSI HELPER GLOBAL ---
 const getErrorDetails = (record) => {
   if (!record.ifpData) return { isError: false, notes: [] };
@@ -104,12 +166,9 @@ const TiltedDateLabel = (props) => {
   } catch (err) { return <g></g>; }
 };
 
-// --- KUSTOMISASI TOOLTIP ANTI GAGAL (SUDAH FIX 100% AMBIL ACTUAL DATA) ---
 const TrendTooltip = ({ active, payload, label, dataList }) => {
   try {
     if (active && payload && payload.length && dataList) {
-      
-      // KUNCI PERBAIKAN: Cari data ASLI dari dataList menggunakan 'label' (Nama Tahap)
       const actualData = dataList.find(d => String(d.namaTahap) === String(label)) || payload[0].payload;
       const currentIndex = dataList.findIndex(d => String(d.namaTahap) === String(label));
       
@@ -144,13 +203,11 @@ const TrendTooltip = ({ active, payload, label, dataList }) => {
           <div className="flex gap-2 mb-4">
             <div className="flex-1 bg-emerald-50 p-2.5 rounded-xl border border-emerald-200 flex flex-col items-center justify-center shadow-sm">
               <p className="text-[9px] font-extrabold text-emerald-600 uppercase tracking-widest mb-1">Sesuai</p>
-              {/* SEKARANG MENGGUNAKAN ACTUALDATA, BUKAN CURRENTDATA! */}
-              <p className="text-xl font-black text-emerald-700 leading-none">{actualData.normalCount || 0}</p>
+              <p className="text-xl font-black text-emerald-700 leading-none">{actualData.normalCount !== undefined ? actualData.normalCount : 0}</p>
             </div>
             <div className="flex-1 bg-red-50 p-2.5 rounded-xl border border-red-200 flex flex-col items-center justify-center shadow-sm">
               <p className="text-[9px] font-extrabold text-red-600 uppercase tracking-widest mb-1">Error</p>
-              {/* SEKARANG MENGGUNAKAN ACTUALDATA, BUKAN CURRENTDATA! */}
-              <p className="text-xl font-black text-red-700 leading-none">{actualData.errorCount || 0}</p>
+              <p className="text-xl font-black text-red-700 leading-none">{actualData.errorCount !== undefined ? actualData.errorCount : 0}</p>
             </div>
           </div>
           
@@ -216,7 +273,6 @@ export default function Dashboard() {
       setRecentRecords(allRecordsData); 
 
       const compiledData = unitsData.map(unit => {
-        // AMBIL SEMUA RECORD UNTUK UNIT INI (Case Insensitive)
         const unitRecords = allRecordsData.filter(r => String(r.unit || '').trim().toUpperCase() === String(unit.name || '').trim().toUpperCase());
         const dynamicColor = getUnitColor(unit.name);
         
@@ -261,7 +317,6 @@ export default function Dashboard() {
               tanggalFormatted = formatTanggalPendek(rawDate);
           }
 
-          // KUNCI: MENGHITUNG SESUAI & ERROR PER TAHAP DENGAN SANGAT AKURAT
           const namaTahapTargetKunci = String(tahapTarget.tahap || '').trim().toLowerCase();
           
           let errorInTahap = 0;
@@ -269,7 +324,6 @@ export default function Dashboard() {
           
           unitRecords.forEach(r => {
              const tahapRecordKunci = String(r.tahap || '').trim().toLowerCase();
-             // Jika nama tahap di record SAMA PERSIS dengan target tahap ini
              if (tahapRecordKunci === namaTahapTargetKunci) {
                  if (isRecordError(r)) {
                      errorInTahap += 1;
@@ -405,17 +459,38 @@ export default function Dashboard() {
 
   return (
     <div className="max-w-7xl mx-auto pb-20 font-sans">
+      <LiquidStyles />
       
-      <div className="mb-8 flex flex-col md:flex-row md:justify-between md:items-end gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Dashboard Kinerja</h1>
-          <p className="text-slate-500 mt-1">Pantau progres analitik visual dan rincian tabel per kategori.</p>
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Dashboard Kinerja</h1>
+        <p className="text-slate-500 mt-1">Pantau progres analitik visual dan rincian tabel per kategori.</p>
+      </div>
+
+      {/* TABS DAN TOMBOL EXPORT DISEJAJARKAN */}
+      <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4 mb-8">
+        <div className="flex flex-wrap gap-2 bg-[#F1F3F4] p-1.5 rounded-2xl w-fit border border-slate-200">
+          <button 
+            onClick={() => { setActiveDashTab('grafik'); resetFilters(); }} 
+            className={`px-6 py-2.5 text-sm font-bold rounded-xl transition-all flex items-center gap-2 ${activeDashTab === 'grafik' ? 'bg-white text-[#1A73E8] shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+          >
+            📊 Analitik & Grafik
+          </button>
+          {dashboardData.map((u, idx) => (
+            <button 
+              key={idx}
+              onClick={() => { setActiveDashTab(u.unitName); resetFilters(); }} 
+              className={`px-6 py-2.5 text-sm font-bold rounded-xl transition-all flex items-center gap-2 ${activeDashTab === u.unitName ? 'bg-white text-[#1A73E8] shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+            >
+              📦 Data {u.unitName}
+            </button>
+          ))}
         </div>
-        
+
+        {/* TOMBOL EXPORT PINDAH KE SINI BIAR SEJAJAR & DI KANAN */}
         {activeDashTab === 'grafik' && (
           <div className="flex gap-2 shrink-0 bg-white p-1 rounded-xl border border-slate-200 shadow-sm animate-in fade-in duration-300">
-             <button onClick={exportGlobalCSV} className="px-5 py-2.5 bg-[#107C41] hover:bg-[#0B5C30] text-white rounded-lg text-sm font-bold transition-all flex items-center gap-2">📥 Export Excel</button>
-             <button onClick={exportGlobalPDF} className="px-5 py-2.5 bg-[#C5221F] hover:bg-[#A50E0E] text-white rounded-lg text-sm font-bold transition-all flex items-center gap-2">📄 Export PDF</button>
+             <button onClick={exportGlobalCSV} className="px-5 py-2.5 bg-[#107C41] hover:bg-[#0B5C30] text-white rounded-lg text-sm font-bold transition-all flex items-center gap-2">📥 Excel Global</button>
+             <button onClick={exportGlobalPDF} className="px-5 py-2.5 bg-[#C5221F] hover:bg-[#A50E0E] text-white rounded-lg text-sm font-bold transition-all flex items-center gap-2">📄 PDF Global</button>
           </div>
         )}
       </div>
@@ -426,91 +501,99 @@ export default function Dashboard() {
         <div className="p-12 text-center bg-white rounded-3xl shadow-sm border border-slate-100 text-slate-500">Belum ada Unit yang memiliki data.</div>
       ) : (
         <>
-          {/* NAVIGASI TAB DASHBOARD */}
-          <div className="flex flex-wrap gap-2 mb-8 bg-[#F1F3F4] p-1.5 rounded-2xl w-fit border border-slate-200">
-            <button 
-              onClick={() => { setActiveDashTab('grafik'); resetFilters(); }} 
-              className={`px-6 py-2.5 text-sm font-bold rounded-xl transition-all flex items-center gap-2 ${activeDashTab === 'grafik' ? 'bg-white text-[#1A73E8] shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
-            >
-              📊 Analitik & Grafik
-            </button>
-            {dashboardData.map((u, idx) => (
-              <button 
-                key={idx}
-                onClick={() => { setActiveDashTab(u.unitName); resetFilters(); }} 
-                className={`px-6 py-2.5 text-sm font-bold rounded-xl transition-all flex items-center gap-2 ${activeDashTab === u.unitName ? 'bg-white text-[#1A73E8] shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
-              >
-                📦 Data {u.unitName}
-              </button>
-            ))}
-          </div>
-
           {/* TAB 1: GRAFIK & ANALITIK KESELURUHAN */}
           {activeDashTab === 'grafik' && (
             <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
+              
+              {/* --- NEW SECTION: LIVE WATER MONITORING (DI PALING ATAS) --- */}
+              <div className="mb-10 bg-white p-6 md:p-8 rounded-3xl shadow-[0_4px_24px_rgba(0,0,0,0.04)] border border-slate-50">
+                <h2 className="text-2xl font-black text-[#1A73E8] mb-6 tracking-tight flex items-center gap-2 border-b border-slate-100 pb-4">
+                  <span className="text-3xl"></span> Live Monitoring
+                </h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                   {dashboardData.map((unit, idx) => (
+                     <div key={idx} className="bg-slate-50 p-4 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all">
+                        <h3 className="font-black text-slate-700 text-center mb-4 uppercase tracking-widest" style={{ color: unit.color }}>{unit.unitName}</h3>
+                        <div className="flex gap-4">
+                           <LiquidCard percent={unit.progressPercent} count={unit.totalPemeriksaan} title="Telah Diperiksa" color="#4285F4" />
+                           <LiquidCard percent={unit.sisaPercent} count={unit.sisa} title="Sisa Target" color="#FBBC05" />
+                        </div>
+                     </div>
+                   ))}
+                </div>
+              </div>
+
+              {/* --- EXISTING DETAILED CARDS PER UNIT --- */}
               {dashboardData.map((unitData, index) => (
                 <div key={index} className="bg-white p-6 md:p-8 rounded-3xl shadow-[0_4px_24px_rgba(0,0,0,0.04)] border border-slate-50">
                   
                   <div className="mb-6 pb-4 border-b border-slate-100 flex justify-between items-center">
                     <h2 className="text-2xl font-black text-slate-800 tracking-tight uppercase" style={{ color: unitData.color }}>
-                      {unitData.unitName}
+                      RINCIAN {unitData.unitName}
                     </h2>
                   </div>
 
                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
                     
-                    <div className="lg:col-span-2 flex flex-col gap-6">
+                    <div className="lg:col-span-2 flex flex-col gap-4">
                       
-                      {/* BARIS ATAS: TOTAL & SISA */}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div className="bg-[#4285F4] text-white p-6 rounded-3xl border border-blue-500 flex flex-col justify-center shadow-md relative overflow-hidden h-36">
+                      {/* BARIS ATAS: KETIGA CARD DISEJAJARKAN (TOTAL, DIPERIKSA, SISA) */}
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 h-full">
+                        <div className="bg-[#4285F4] text-white p-5 rounded-2xl border border-blue-500 flex flex-col justify-center shadow-sm relative overflow-hidden">
                           <div className="absolute -right-4 -top-4 text-7xl opacity-10">🎯</div>
-                          <p className="text-xs font-extrabold text-blue-100 uppercase tracking-widest">Target Keseluruhan</p>
-                          <div className="flex items-baseline gap-2 mt-2">
-                            <h3 className="text-5xl font-black text-white">{unitData.baseGrandTotal.toLocaleString('id-ID')}</h3>
-                          </div>
+                          <p className="text-[10px] font-extrabold text-blue-100 uppercase tracking-widest">Target Keseluruhan</p>
+                          <h3 className="text-4xl font-black text-white mt-1">{unitData.baseGrandTotal.toLocaleString('id-ID')}</h3>
+                          <p className="text-[10px] font-bold text-blue-200 mt-2">Total Kuota Unit</p>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-4">
-                          <div className="bg-[#34A853] text-white p-4 rounded-2xl border border-green-600 flex flex-col justify-center shadow-md">
-                            <p className="text-[10px] font-extrabold text-green-100 uppercase tracking-widest leading-tight mb-1">Telah Diperiksa</p>
-                            <h3 className="text-3xl font-black text-white">{unitData.totalPemeriksaan.toLocaleString('id-ID')}</h3>
-                            <p className="text-[10px] font-bold text-green-50 mt-1">{unitData.progressPercent}% dari Target</p>
+                        <div className="bg-[#34A853] text-white p-5 rounded-2xl border border-green-600 flex flex-col justify-center shadow-sm">
+                          <p className="text-[10px] font-extrabold text-green-100 uppercase tracking-widest">Telah Diperiksa</p>
+                          <h3 className="text-4xl font-black text-white mt-1">{unitData.totalPemeriksaan.toLocaleString('id-ID')}</h3>
+                          <div className="mt-2">
+                            <span className="text-sm font-bold text-white bg-white/20 px-2.5 py-1 rounded-lg border border-white/30">{unitData.progressPercent}% <span className="text-[10px] font-medium opacity-90">dari Target</span></span>
                           </div>
-                          
-                          <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 flex flex-col justify-center shadow-sm">
-                            <p className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest leading-tight mb-1">Sisa Target</p>
-                            <h3 className="text-3xl font-black text-slate-700">{unitData.sisa.toLocaleString('id-ID')}</h3>
-                            <p className="text-[10px] font-bold text-slate-400 mt-1">{unitData.sisaPercent}% Sisa</p>
+                        </div>
+                        
+                        <div className="bg-[#FBBC05] text-white p-5 rounded-2xl border border-[#F2A900] flex flex-col justify-center shadow-sm">
+                          <p className="text-[10px] font-extrabold text-yellow-100 uppercase tracking-widest">Sisa Target</p>
+                          <h3 className="text-4xl font-black text-white mt-1">{unitData.sisa.toLocaleString('id-ID')}</h3>
+                          <div className="mt-2">
+                            <span className="text-sm font-bold text-white bg-white/20 px-2.5 py-1 rounded-lg border border-white/30">{unitData.sisaPercent}% <span className="text-[10px] font-medium opacity-90">Sisa</span></span>
                           </div>
                         </div>
                       </div>
 
-                      {/* BARIS BAWAH: RINCIAN SESUAI, ERROR, PENGGANTI */}
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 h-full">
-                        <div className="bg-blue-50/50 p-4 rounded-2xl border border-blue-100 flex flex-col justify-center shadow-sm">
+                      {/* BARIS BAWAH: RINCIAN SESUAI, ERROR, PENGGANTI (BENTUK SAMA PERSIS) */}
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 h-full mt-2">
+                        <div className="bg-blue-50 p-5 rounded-2xl border border-blue-100 flex flex-col justify-center shadow-sm">
                           <p className="text-[10px] font-extrabold text-blue-600 uppercase tracking-widest">Kondisi Sesuai</p>
-                          <h3 className="text-2xl font-black text-blue-700 mt-1">{unitData.normalCount.toLocaleString('id-ID')}</h3>
-                          <p className="text-[10px] font-bold text-blue-500 mt-1">{unitData.pctSesuai}% dari Total Diperiksa</p>
+                          <h3 className="text-4xl font-black text-blue-700 mt-1">{unitData.normalCount.toLocaleString('id-ID')}</h3>
+                          <div className="mt-2">
+                            <span className="text-sm font-bold text-blue-600 bg-blue-100/60 px-2.5 py-1 rounded-lg border border-blue-200">{unitData.pctSesuai}% <span className="text-[10px] font-medium opacity-90">dari Diperiksa</span></span>
+                          </div>
                         </div>
 
-                        <div className="bg-[#FCE8E6]/50 p-4 rounded-2xl border border-[#FAD2CF] flex flex-col justify-center shadow-sm">
-                          <p className="text-[10px] font-extrabold text-[#C5221F] uppercase tracking-widest">Tidak Sesuai</p>
-                          <h3 className="text-2xl font-black text-[#C5221F] mt-1">{unitData.totalError.toLocaleString('id-ID')}</h3>
-                          <p className="text-[10px] font-bold text-red-400 mt-1">{unitData.pctError}% dari Total Diperiksa</p>
+                        <div className="bg-[#FCE8E6] p-5 rounded-2xl border border-[#FAD2CF] flex flex-col justify-center shadow-sm">
+                          <p className="text-[10px] font-extrabold text-[#C5221F] uppercase tracking-widest">Tidak Sesuai (Error)</p>
+                          <h3 className="text-4xl font-black text-[#C5221F] mt-1">{unitData.totalError.toLocaleString('id-ID')}</h3>
+                          <div className="mt-2">
+                            <span className="text-sm font-bold text-red-600 bg-red-100/60 px-2.5 py-1 rounded-lg border border-red-200">{unitData.pctError}% <span className="text-[10px] font-medium opacity-90">dari Diperiksa</span></span>
+                          </div>
                         </div>
 
-                        <div className="bg-[#F3E8FD]/50 p-4 rounded-2xl border border-[#E9D5FF] flex flex-col justify-center shadow-sm relative overflow-hidden">
-                          <p className="text-[10px] font-extrabold text-[#7E22CE] uppercase tracking-widest">Unit Pengganti</p>
-                          <h3 className="text-2xl font-black text-[#7E22CE] mt-1">{unitData.totalPengganti.toLocaleString('id-ID')}</h3>
-                          <p className="text-[10px] font-bold text-purple-400 mt-1">Total Unit Diganti</p>
+                        <div className="bg-[#F3E8FD] p-5 rounded-2xl border border-[#E9D5FF] flex flex-col justify-center shadow-sm relative overflow-hidden">
+                          <p className="text-[10px] font-extrabold text-[#7E22CE] uppercase tracking-widest">Wajib Pengganti</p>
+                          <h3 className="text-4xl font-black text-[#7E22CE] mt-1">{unitData.totalPengganti.toLocaleString('id-ID')}</h3>
+                          <div className="mt-2">
+                             <span className="text-[10px] font-bold text-purple-500 uppercase">Total Unit Diganti</span>
+                          </div>
                         </div>
                       </div>
 
                     </div>
 
                     <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm flex flex-col justify-center items-center relative">
-                      <p className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-4">Progres Target Reguler</p>
+                      <p className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest mb-4">Proporsi Pemeriksaan</p>
                       <div className="h-44 w-full relative flex items-center justify-center">
                         <ResponsiveContainer width="100%" height="100%">
                           <PieChart>
@@ -555,7 +638,7 @@ export default function Dashboard() {
                             
                             <Bar dataKey="baseTarget" name="Total Target" fill="url(#colorGoogleBlueGrad)" radius={[6, 6, 0, 0]} maxBarSize={90}>
                               <LabelList dataKey="baseTarget" position="top" style={{ fontSize: '11px', fill: '#64748B', fontWeight: '900' }} />
-                              <LabelList dataKey="tanggalFormatted" content={<TiltedDateLabel />} />
+                              
                             </Bar>
 
                             <Line 

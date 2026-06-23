@@ -4,6 +4,25 @@ import { db } from '../config/firebase';
 import { collection, getDocs, deleteDoc, doc, updateDoc, query, orderBy, addDoc } from 'firebase/firestore';
 import Modal from '../components/Modal';
 
+// --- HELPER FORMAT TANGGAL TAHAP (LEBIH RAPI & LENGKAP) ---
+const formatTanggalPendek = (dateStr) => {
+  if (!dateStr) return '';
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr;
+    return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+  } catch (e) { return dateStr; }
+};
+
+const formatRangeTanggal = (start, end) => {
+  const s = formatTanggalPendek(start);
+  const e = formatTanggalPendek(end);
+  if (s && e && s !== e) return `${s} - ${e}`;
+  if (s) return s;
+  if (e) return e;
+  return '';
+};
+
 export default function Absensi() {
   const { user } = useAuth();
   const [absensiList, setAbsensiList] = useState([]);
@@ -32,9 +51,10 @@ export default function Absensi() {
   const fetchData = async () => {
     setIsLoading(true);
     try {
+      // Ambil objek Tahap utuh beserta tanggalnya
       const tahapSnap = await getDocs(collection(db, 'master_tahaps'));
-      const listTahap = tahapSnap.docs.map(d => d.data().name);
-      listTahap.sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+      const listTahap = tahapSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      listTahap.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
       setTahaps(listTahap);
 
       const q = query(collection(db, 'absensi'), orderBy('timestamp', 'desc'));
@@ -103,7 +123,6 @@ export default function Absensi() {
     
     setIsTarikSubmitting(true);
     try {
-      // Duplikasi data peserta yang dipilih ke tahap baru dengan timestamp hari ini
       const promises = tarikSelectedUsers.map(user => {
         return addDoc(collection(db, 'absensi'), {
           namaLengkap: user.namaLengkap,
@@ -162,22 +181,18 @@ export default function Absensi() {
         };
       }
 
-      // Pastikan nama tahap tidak duplikat di array (berjaga-jaga kalau dia absen dobel di 1 tahap)
       if (!mapRekap[nama].listTahap.includes(tahap)) {
         mapRekap[nama].listTahap.push(tahap);
       }
     });
 
-    // Ubah ke Array
     let rekapArray = Object.values(mapRekap);
 
-    // Urutkan tahap di masing-masing peserta secara numerik
     rekapArray.forEach(peserta => {
       peserta.listTahap.sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
       peserta.totalHadir = peserta.listTahap.length;
     });
 
-    // --- FILTER PENCARIAN & DROPDOWN ---
     if (searchName) {
       rekapArray = rekapArray.filter(p => p.namaLengkap.includes(searchName.toUpperCase()));
     }
@@ -185,7 +200,6 @@ export default function Absensi() {
       rekapArray = rekapArray.filter(p => p.listTahap.includes(filterTahap));
     }
 
-    // Sort by Total Hadir terbanyak
     rekapArray.sort((a, b) => b.totalHadir - a.totalHadir);
 
     return rekapArray;
@@ -193,10 +207,25 @@ export default function Absensi() {
 
   const rekapAbsensiData = getRekapAbsensiData();
 
+  // --- LOGIKA TANGGAL SINKRON UNTUK PDF ---
+  let pdfDateText = formatTanggalClean(selectedBiodata?.timestamp);
+  if (selectedBiodata) {
+    const matchedTahap = tahaps.find(t => t.name === selectedBiodata.tahap);
+    if (matchedTahap) {
+      if (matchedTahap.startDate && matchedTahap.endDate) {
+        pdfDateText = formatRangeTanggal(matchedTahap.startDate, matchedTahap.endDate);
+      } else if (matchedTahap.startDate) {
+        pdfDateText = formatTanggalPendek(matchedTahap.startDate);
+      } else if (matchedTahap.tanggal) {
+        pdfDateText = formatTanggalPendek(matchedTahap.tanggal);
+      }
+    }
+  }
+
   return (
     <div className="max-w-7xl mx-auto pb-20 font-sans relative">
       
-      {/* MODAL BIODATA A4 PRINTABLE */}
+      {/* MODAL BIODATA A4 PRINTABLE (UMUR DAN ALAMAT DIHILANGKAN, TANGGAL SINKRON) */}
       {selectedBiodata && (
         <div className="fixed inset-0 z-[100] bg-slate-900/80 flex items-start justify-center p-4 sm:p-8 overflow-y-auto print:p-0 print:bg-white backdrop-blur-sm transition-opacity">
           <div className="bg-white max-w-3xl w-full mt-10 mb-10 rounded-2xl shadow-2xl overflow-hidden print:mt-0 print:shadow-none print:w-full print:max-w-none print:rounded-none relative print:absolute print:inset-0">
@@ -214,11 +243,9 @@ export default function Absensi() {
               <div className="space-y-6 mt-10 text-lg">
                 <div className="flex"><div className="w-52 font-bold">Nama Lengkap</div><div className="w-4">:</div><div className="flex-1 font-semibold uppercase">{selectedBiodata.namaLengkap}</div></div>
                 <div className="flex"><div className="w-52 font-bold">Tempat, Tanggal Lahir</div><div className="w-4">:</div><div className="flex-1">{selectedBiodata.tempatLahir || '-'}, {selectedBiodata.tanggalLahir ? new Date(selectedBiodata.tanggalLahir).toLocaleDateString('id-ID', {day:'numeric', month:'long', year:'numeric'}) : '-'}</div></div>
-                <div className="flex"><div className="w-52 font-bold">Umur saat ini</div><div className="w-4">:</div><div className="flex-1">{selectedBiodata.umur || '-'} Tahun</div></div>
                 <div className="flex"><div className="w-52 font-bold">Instansi</div><div className="w-4">:</div><div className="flex-1 uppercase">{selectedBiodata.instansi}</div></div>
                 <div className="flex"><div className="w-52 font-bold">Jabatan</div><div className="w-4">:</div><div className="flex-1 uppercase">{selectedBiodata.jabatan}</div></div>
-                <div className="flex"><div className="w-52 font-bold">Alamat Domisili</div><div className="w-4">:</div><div className="flex-1 leading-relaxed">{selectedBiodata.alamat}</div></div>
-                <div className="flex"><div className="w-52 font-bold">Tanggal Kehadiran</div><div className="w-4">:</div><div className="flex-1">{formatTanggalClean(selectedBiodata.timestamp)}</div></div>
+                <div className="flex"><div className="w-52 font-bold">Tanggal Kehadiran</div><div className="w-4">:</div><div className="flex-1 font-bold text-slate-800">{pdfDateText}</div></div>
               </div>
               <div className="mt-32 flex justify-end">
                 <div className="text-center"><p className="mb-24">Mengetahui & Menyetujui,</p><p className="font-bold underline uppercase">{selectedBiodata.namaLengkap}</p><p className="text-sm mt-1">{selectedBiodata.jabatan}</p></div>
@@ -249,7 +276,7 @@ export default function Absensi() {
               <label className="text-xs font-bold text-slate-500 uppercase ml-1">Masukkan ke Tahap <span className="text-red-500">*</span></label>
               <select value={tarikTahapTarget} onChange={e => setTarikTahapTarget(e.target.value)} className="w-full mt-1 px-4 py-3 bg-white border border-slate-200 rounded-xl text-sm outline-none focus:border-[#4285F4] focus:ring-2 focus:ring-blue-100 font-bold text-slate-800">
                 <option value="">-- Pilih Tahap Target --</option>
-                {tahaps.map(t => <option key={t} value={t}>{t}</option>)}
+                {tahaps.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}
               </select>
             </div>
             
@@ -277,7 +304,6 @@ export default function Absensi() {
           <p className="text-slate-500 mt-1">Pantau rekapitulasi kehadiran anggota dan daftar absen per tahap.</p>
         </div>
         <div className="flex gap-2 flex-wrap">
-          {/* TOMBOL TARIK DATA */}
           <button onClick={() => setIsTarikModalOpen(true)} className="flex items-center gap-2 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 font-bold px-5 py-3 rounded-xl transition-all shadow-sm text-sm whitespace-nowrap">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
             Tarik Data Lama
@@ -322,7 +348,7 @@ export default function Absensi() {
              >
                <option value="">📋 Semua Tahap</option>
                {tahaps.map(t => (
-                 <option key={t} value={t}>{t}</option>
+                 <option key={t.id} value={t.name}>{t.name}</option>
                ))}
              </select>
 
@@ -401,18 +427,33 @@ export default function Absensi() {
 
       </div>
 
-      {/* --- BAGIAN 2: DAFTAR ABSENSI DETAIL (BAWAAN) --- */}
+      {/* --- BAGIAN 2: DAFTAR ABSENSI DETAIL (TANGGAL SINKRON) --- */}
       <div className="space-y-4 print:hidden">
         {isLoading ? <p className="text-center text-blue-500 py-10 animate-pulse font-medium">Memuat data absensi...</p> : (
-          tahaps.map((tahap) => {
-            const pesertaDiTahapIni = absensiList.filter(item => item.tahap === tahap);
+          tahaps.map((tahapObj) => {
+            const namaTahap = tahapObj.name;
+            const pesertaDiTahapIni = absensiList.filter(item => item.tahap === namaTahap);
+            
+            // LOGIKA MENGAMBIL TANGGAL DARI MASTER TAHAP
+            let dateText = '';
+            if (tahapObj.startDate && tahapObj.endDate) {
+              dateText = formatRangeTanggal(tahapObj.startDate, tahapObj.endDate);
+            } else if (tahapObj.startDate) {
+              dateText = formatTanggalPendek(tahapObj.startDate);
+            } else if (tahapObj.tanggal) {
+              dateText = formatTanggalPendek(tahapObj.tanggal); // Fallback data lama
+            }
+
             return (
-              <details key={tahap} className="group bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm hover:border-blue-300 transition-colors" open={pesertaDiTahapIni.length > 0}>
+              <details key={tahapObj.id} className="group bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm hover:border-blue-300 transition-colors" open={pesertaDiTahapIni.length > 0}>
                 <summary className="font-bold cursor-pointer p-4 sm:p-5 flex items-center justify-between bg-slate-50/50 outline-none select-none hover:bg-slate-100 transition-colors">
                   <div className="flex items-center gap-3">
                     <span className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center text-blue-600 shadow-inner shrink-0 text-xl">👥</span>
                     <div>
-                      <h3 className="text-slate-800 tracking-wide uppercase text-base sm:text-lg">{tahap}</h3>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="text-slate-800 tracking-wide uppercase text-base sm:text-lg">{namaTahap}</h3>
+                        {dateText && <span className="text-[10px] font-bold text-[#1A73E8] bg-blue-50 px-2 py-0.5 rounded border border-blue-100 shadow-sm">{dateText}</span>}
+                      </div>
                       <p className="text-xs font-semibold text-slate-500 font-mono mt-0.5">{pesertaDiTahapIni.length} Orang Hadir</p>
                     </div>
                   </div>
@@ -427,7 +468,8 @@ export default function Absensi() {
                       <thead className="bg-[#F8F9FA] border-y border-slate-100">
                         <tr className="text-xs font-extrabold text-slate-500 uppercase tracking-wider">
                           <th className="py-4 px-6 w-16 text-center">No</th>
-                          <th className="py-4 px-6">Nama & Umur</th>
+                          {/* KOLOM UMUR DIHAPUS, HANYA NAMA LENGKAP */}
+                          <th className="py-4 px-6">Nama Lengkap</th>
                           <th className="py-4 px-6">Instansi & Jabatan</th>
                           <th className="py-4 px-6">Tanggal Absen</th>
                           {user?.role === 'admin' && <th className="py-4 px-6 text-right">Aksi</th>}
@@ -440,14 +482,14 @@ export default function Absensi() {
                               <td className="py-4 px-6 text-center font-bold text-slate-400">{index + 1}</td>
                               <td className="py-4 px-6">
                                 <div className="font-extrabold text-[#1A73E8] uppercase">{item.namaLengkap}</div>
-                                <div className="text-xs text-slate-500 mt-0.5">{item.umur || '-'} Tahun</div>
                               </td>
                               <td className="py-4 px-6">
                                 <div className="font-bold text-slate-700 uppercase">{item.instansi}</div>
                                 <div className="text-xs text-slate-500 mt-0.5 uppercase">{item.jabatan}</div>
                               </td>
-                              <td className="py-4 px-6 font-semibold text-slate-500 text-xs">
-                                {formatTanggalClean(item.timestamp)}
+                              {/* MEMBACA DATE TEXT DARI TAHAP, JIKA KOSONG BARU PAKAI WAKTU INPUT */}
+                              <td className="py-4 px-6 font-bold text-slate-800 text-xs">
+                                {dateText ? dateText : formatTanggalClean(item.timestamp)}
                               </td>
                               {user?.role === 'admin' && (
                                 <td className="py-4 px-6 text-right">
