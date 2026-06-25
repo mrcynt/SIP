@@ -115,12 +115,13 @@ export default function Pemeriksaan() {
   const [isSnLocked, setIsSnLocked] = useState(false);
   const [isCheckingSN, setIsCheckingSN] = useState(false); 
   
-  // STATE BARU: Logika Unit Pengganti
   const [isPengganti, setIsPengganti] = useState(false);
 
   const [uploadMode, setUploadMode] = useState('kategori'); 
   const [photos, setPhotos] = useState([]); 
   const [mediaSheet, setMediaSheet] = useState({ isOpen: false, kategori: null });
+  
+  const [previewPhoto, setPreviewPhoto] = useState(null);
   
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState('');
@@ -181,11 +182,19 @@ export default function Pemeriksaan() {
     setIfpData(updatedIfp);
   };
 
+  const handleUncheckAll = () => {
+    const updatedIfp = { ...ifpData };
+    const allItems = [...CEKLIS_FISIK, ...CEKLIS_KELENGKAPAN, ...CEKLIS_SPESIFIKASI, ...CEKLIS_OPERASIONAL];
+    allItems.forEach(item => {
+      if (!item.defaultState) updatedIfp[item.id] = { status: null, ket: '' };
+    });
+    setIfpData(updatedIfp);
+  };
+
   const handleIfpChange = (id, field, value) => {
     setIfpData(prev => ({ ...prev, [id]: { ...prev[id], [field]: value } }));
   };
 
-  // LOGIKA SCANNER ZXING
   useEffect(() => {
     if (!isScanning) return;
     const codeReader = new BrowserMultiFormatReader();
@@ -239,7 +248,52 @@ export default function Pemeriksaan() {
     } catch (err) { alert("Senter gagal dinyalakan."); }
   };
 
-  useEffect(() => { return () => { photos.forEach(p => URL.revokeObjectURL(p.preview)); }; }, [photos]);
+  // --- PERBAIKAN BUG PREVIEW FOTO ---
+  // Kita HAPUS useEffect yang sebelumnya merusak memori foto.
+  // Pembersihan memori akan dilakukan secara langsung saat foto diganti, dihapus, atau di-reset.
+
+  const handleKategoriChange = (kategori, e) => {
+    const file = e.target.files[0]; if (!file) return;
+    setPhotos(prev => {
+      // Bersihkan preview lama dari memori jika fotonya ditimpa
+      const existingPhoto = prev.find(p => p.kategori === kategori);
+      if (existingPhoto) URL.revokeObjectURL(existingPhoto.preview);
+      
+      return [...prev.filter(p => p.kategori !== kategori), { id: Date.now().toString(), file, preview: URL.createObjectURL(file), kategori }];
+    });
+  };
+
+  const handleBulkChange = (e) => {
+    const files = Array.from(e.target.files); if (files.length === 0) return;
+    setPhotos(prev => {
+      const existingIds = new Set(prev.map(p => p.file.name + p.file.size));
+      const newFiles = files.filter(f => !existingIds.has(f.name + f.size)).map((file, i) => ({ id: `${Date.now()}_${i}`, file, preview: URL.createObjectURL(file), kategori: `Foto Tambahan ${prev.length + i + 1}` }));
+      return [...prev, ...newFiles];
+    });
+  };
+
+  const removePhoto = (id) => { 
+    setPhotos(prev => {
+      // Bersihkan preview dari memori sebelum dihapus dari state
+      const photoToDelete = prev.find(p => p.id === id);
+      if (photoToDelete) URL.revokeObjectURL(photoToDelete.preview);
+      
+      return prev.filter(p => p.id !== id);
+    }); 
+  };
+  
+  const handleBatal = () => { 
+    setSerialNumber(''); setIsSnLocked(false); setError(''); setIsPengganti(false);
+    
+    // Bersihkan semua preview dari memori sebelum reset array
+    photos.forEach(p => URL.revokeObjectURL(p.preview));
+    setPhotos([]); 
+
+    const resetIfp = {};
+    [...CEKLIS_FISIK, ...CEKLIS_KELENGKAPAN, ...CEKLIS_SPESIFIKASI, ...CEKLIS_OPERASIONAL].forEach(item => { resetIfp[item.id] = { status: item.defaultState || null, ket: item.defaultKet || '' }; });
+    setIfpData(resetIfp);
+  };
+
   useEffect(() => { if (activeTab === 'laporan') fetchLaporan(); }, [activeTab]);
 
   const fetchLaporan = async () => {
@@ -275,27 +329,6 @@ export default function Pemeriksaan() {
       }
       setIsSnLocked(true);
     } catch (err) { setError("Terjadi gangguan saat memvalidasi SN."); } finally { setIsCheckingSN(false); }
-  };
-
-  const handleKategoriChange = (kategori, e) => {
-    const file = e.target.files[0]; if (!file) return;
-    setPhotos(prev => [...prev.filter(p => p.kategori !== kategori), { id: Date.now().toString(), file, preview: URL.createObjectURL(file), kategori }]);
-  };
-  const handleBulkChange = (e) => {
-    const files = Array.from(e.target.files); if (files.length === 0) return;
-    setPhotos(prev => {
-      const existingIds = new Set(prev.map(p => p.file.name + p.file.size));
-      const newFiles = files.filter(f => !existingIds.has(f.name + f.size)).map((file, i) => ({ id: `${Date.now()}_${i}`, file, preview: URL.createObjectURL(file), kategori: `Foto Tambahan ${prev.length + i + 1}` }));
-      return [...prev, ...newFiles];
-    });
-  };
-  const removePhoto = (id) => { setPhotos(prev => prev.filter(p => p.id !== id)); };
-  
-  const handleBatal = () => { 
-    setSerialNumber(''); setIsSnLocked(false); setPhotos([]); setError(''); setIsPengganti(false);
-    const resetIfp = {};
-    [...CEKLIS_FISIK, ...CEKLIS_KELENGKAPAN, ...CEKLIS_SPESIFIKASI, ...CEKLIS_OPERASIONAL].forEach(item => { resetIfp[item.id] = { status: item.defaultState || null, ket: item.defaultKet || '' }; });
-    setIfpData(resetIfp);
   };
 
   const handleSimpanData = async () => {
@@ -378,8 +411,8 @@ export default function Pemeriksaan() {
           timestamp: new Date().toISOString(), 
           ifpData: JSON.stringify(ifpData),
           driveUrl: result.driveUrl,
-          isPengganti: isPengganti, // <--- PENAMBAHAN STATUS PENGGANTI
-          linkedErrorSN: null       // <--- FIELD DEFAULT UNTUK TAUTAN
+          isPengganti: isPengganti,
+          linkedErrorSN: null
         });
         handleBatal(); setIsUploading(false); setNotifKerjaan({ isOpen: true, isOffline: false });
       } else { throw new Error(result.message); }
@@ -538,6 +571,7 @@ export default function Pemeriksaan() {
       {/* ========================================================= */}
       <div className="max-w-4xl mx-auto pb-24 font-sans relative select-none">
         
+        {/* MODAL SCANNER */}
         {isScanning && (
           <div className="fixed inset-0 bg-slate-900/95 z-[120] flex flex-col justify-center items-center backdrop-blur-md animate-in fade-in duration-300">
             <div className="w-full max-w-md bg-white rounded-3xl overflow-hidden shadow-2xl m-4 flex flex-col animate-in zoom-in-95 duration-300">
@@ -551,12 +585,51 @@ export default function Pemeriksaan() {
           </div>
         )}
 
+        {/* MODAL PILIH SUMBER FOTO */}
         {mediaSheet.isOpen && (
           <div className="fixed inset-0 bg-slate-900/60 z-[110] flex justify-center items-end sm:items-center p-0 sm:p-4 backdrop-blur-sm animate-in fade-in duration-300">
             <div className="bg-white w-full max-w-sm rounded-t-3xl sm:rounded-3xl p-6 pb-10 sm:pb-6 shadow-2xl animate-in slide-in-from-bottom-full sm:zoom-in-95 duration-300"><div className="flex justify-between items-center mb-6"><div><h3 className="font-extrabold text-slate-800 text-lg">Pilih Sumber Foto</h3><p className="text-xs font-bold text-slate-400 mt-1 uppercase tracking-wide">{mediaSheet.kategori}</p></div><button onClick={() => setMediaSheet({isOpen:false, kategori:null})} className="w-8 h-8 bg-slate-100 rounded-full flex items-center justify-center text-slate-500 font-bold hover:bg-slate-200 transition-colors">✕</button></div><div className="flex flex-col gap-3"><label className="w-full flex items-center justify-center gap-3 bg-[#1A73E8] text-white py-4 rounded-2xl font-bold cursor-pointer hover:bg-[#1557B0] transition-colors shadow-sm active:scale-95"><span className="text-xl">📷</span> Ambil Foto Langsung<input type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => { handleKategoriChange(mediaSheet.kategori, e); setMediaSheet({isOpen:false, kategori:null}); }} /></label><label className="w-full flex items-center justify-center gap-3 bg-[#F8F9FA] text-slate-700 border border-slate-200 py-4 rounded-2xl font-bold cursor-pointer hover:bg-slate-100 transition-colors shadow-sm active:scale-95"><span className="text-xl">🖼️</span> Pilih dari Galeri HP<input type="file" accept="image/*" className="hidden" onChange={(e) => { handleKategoriChange(mediaSheet.kategori, e); setMediaSheet({isOpen:false, kategori:null}); }} /></label></div></div>
           </div>
         )}
 
+        {/* MODAL PREVIEW FOTO FULL SCREEN */}
+        {previewPhoto && (
+          <div className="fixed inset-0 bg-black/90 z-[130] flex flex-col justify-center items-center backdrop-blur-md animate-in fade-in duration-300">
+            {/* Header Toolbar */}
+            <div className="absolute top-0 left-0 right-0 p-4 bg-gradient-to-b from-black/70 to-transparent flex justify-between items-center z-10">
+               <div>
+                  <p className="text-white/70 text-xs font-bold uppercase tracking-widest">Kategori Foto</p>
+                  <h3 className="text-white font-black text-lg">{previewPhoto.kategori}</h3>
+               </div>
+               <button onClick={() => setPreviewPhoto(null)} className="w-10 h-10 bg-white/20 hover:bg-red-500 rounded-full flex items-center justify-center text-white text-xl transition-colors backdrop-blur-sm">✕</button>
+            </div>
+            
+            {/* Image Container */}
+            <div className="w-full h-full p-4 flex items-center justify-center mt-8">
+               <img src={previewPhoto.preview} alt="Preview Full" className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl animate-in zoom-in-95" />
+            </div>
+
+            {/* Tombol Aksi Bawah */}
+            <div className="absolute bottom-8 flex gap-4 z-10">
+               <button 
+                 onClick={() => { setMediaSheet({ isOpen: true, kategori: previewPhoto.kategori }); setPreviewPhoto(null); }} 
+                 className="px-6 py-3 bg-white text-slate-800 rounded-full font-bold shadow-lg hover:bg-slate-100 transition-colors"
+               >
+                 🔄 Ganti Foto
+               </button>
+               {uploadMode === 'bulk' && (
+                 <button 
+                   onClick={() => { removePhoto(previewPhoto.id); setPreviewPhoto(null); }} 
+                   className="px-6 py-3 bg-red-500 text-white rounded-full font-bold shadow-lg hover:bg-red-600 transition-colors"
+                 >
+                   🗑️ Hapus Foto
+                 </button>
+               )}
+            </div>
+          </div>
+        )}
+
+        {/* LOADING UPLOAD OVERLAY */}
         {isUploading && (
           <div className="fixed inset-0 bg-white/95 z-[100] flex flex-col justify-center items-center backdrop-blur-sm transition-all"><div className="relative w-20 h-20 mb-6"><div className="absolute inset-0 rounded-full border-[3px] border-[#F1F3F4]"></div><div className="absolute inset-0 rounded-full border-[3px] border-[#1A73E8] border-t-transparent animate-spin"></div><div className="absolute inset-0 flex items-center justify-center text-2xl animate-bounce">🚀</div></div><h2 className="text-xl font-bold text-slate-800 tracking-wide text-center">Menyimpan &<br/>Mengirim PDF ke Drive...</h2><p className="text-[#EA4335] text-xs font-bold mt-2 bg-red-50 px-3 py-1 rounded-full border border-red-100">Mohon tidak menutup halaman ini</p></div>
         )}
@@ -596,8 +669,8 @@ export default function Pemeriksaan() {
                 </div>
                 
                 <div className="flex p-1 bg-[#F1F3F4] rounded-full mb-6 w-full sm:w-fit mx-auto border border-slate-200/50">
-                  <button onClick={() => { setUploadMode('kategori'); setPhotos([]); }} className={`flex-1 sm:px-8 py-2 text-xs font-bold rounded-full transition-all whitespace-nowrap ${uploadMode === 'kategori' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>📊 Mode Kategori</button>
-                  <button onClick={() => { setUploadMode('bulk'); setPhotos([]); }} className={`flex-1 sm:px-8 py-2 text-xs font-bold rounded-full transition-all whitespace-nowrap ${uploadMode === 'bulk' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>📂 Mode Cepat</button>
+                  <button onClick={() => { photos.forEach(p => URL.revokeObjectURL(p.preview)); setUploadMode('kategori'); setPhotos([]); }} className={`flex-1 sm:px-8 py-2 text-xs font-bold rounded-full transition-all whitespace-nowrap ${uploadMode === 'kategori' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>📊 Mode Kategori</button>
+                  <button onClick={() => { photos.forEach(p => URL.revokeObjectURL(p.preview)); setUploadMode('bulk'); setPhotos([]); }} className={`flex-1 sm:px-8 py-2 text-xs font-bold rounded-full transition-all whitespace-nowrap ${uploadMode === 'bulk' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>📂 Mode Cepat</button>
                 </div>
                 
                 <div className="w-full h-1.5 bg-[#F1F3F4] rounded-full mb-8 overflow-hidden"><div className="h-full bg-[#1A73E8] rounded-full transition-all duration-500" style={{ width: `${progressPercent}%` }}></div></div>
@@ -607,11 +680,11 @@ export default function Pemeriksaan() {
                     {kategoriWajib.map((kat) => {
                       const photo = photos.find(p => p.kategori === kat);
                       return (
-                        <div key={kat} onClick={() => setMediaSheet({ isOpen: true, kategori: kat })} className={`relative flex flex-col items-center justify-center p-3 border ${photo ? 'border-[#34A853] bg-[#E6F4EA]/20' : 'border-slate-200 bg-white hover:bg-[#F8F9FA]'} rounded-2xl cursor-pointer transition-all h-28 overflow-hidden group`}>
+                        <div key={kat} onClick={() => photo ? setPreviewPhoto(photo) : setMediaSheet({ isOpen: true, kategori: kat })} className={`relative flex flex-col items-center justify-center p-3 border ${photo ? 'border-[#34A853] bg-[#E6F4EA]/20' : 'border-slate-200 bg-white hover:bg-[#F8F9FA]'} rounded-2xl cursor-pointer transition-all h-28 overflow-hidden group`}>
                           {photo ? (
                             <>
                               <img src={photo.preview} className="absolute inset-0 w-full h-full object-cover" alt={kat} />
-                              <div className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><span className="text-white text-[10px] font-bold bg-black/40 px-2 py-0.5 rounded-full">Ganti</span></div>
+                              <div className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><span className="text-white text-[10px] font-bold bg-black/40 px-2 py-0.5 rounded-full">🔍 Lihat</span></div>
                               <div className="absolute top-1 right-1 bg-[#34A853] text-white rounded-full w-5 h-5 flex items-center justify-center shadow-sm"><svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg></div>
                             </>
                           ) : ( <><span className="text-[10px] font-bold text-slate-500 text-center leading-tight px-1 uppercase">{kat}</span></> )}
@@ -629,9 +702,9 @@ export default function Pemeriksaan() {
                     {photos.length > 0 && (
                       <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3 animate-in fade-in duration-200">
                         {photos.map(p => (
-                          <div key={p.id} className="relative aspect-square rounded-xl overflow-hidden border border-slate-200 shadow-sm group">
+                          <div key={p.id} onClick={() => setPreviewPhoto(p)} className="relative aspect-square rounded-xl overflow-hidden border border-slate-200 shadow-sm group cursor-pointer">
                             <img src={p.preview} className="w-full h-full object-cover" alt="Preview" />
-                            <button onClick={() => removePhoto(p.id)} className="absolute top-1 right-1 bg-white/90 hover:bg-[#EA4335] text-[#EA4335] w-6 h-6 rounded-full flex items-center justify-center text-xs shadow-sm">✕</button>
+                            <div className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><span className="text-white text-[10px] font-bold">🔍 Lihat</span></div>
                           </div>
                         ))}
                       </div>
@@ -643,11 +716,18 @@ export default function Pemeriksaan() {
               {/* URUTAN 3: FORM CEKLIS IFP */}
               {user.assignedUnit === 'IFP' && (
                 <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-[0_4px_24px_rgba(0,0,0,0.02)] mb-6">
-                  <div className="flex justify-between items-center mb-6">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
                     <h2 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2"><span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-black text-white bg-[#1A73E8]">3</span> Instrumen Pemeriksaan</h2>
-                    <button onClick={handleCheckAll} className="px-4 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-full text-xs font-black uppercase transition-all active:scale-95 shadow-sm">
-                      ✓ Check All
-                    </button>
+                    
+                    {/* FITUR BARU: TOMBOL CHECK ALL & UNCHECK ALL BERSAMAAN */}
+                    <div className="flex gap-2">
+                       <button onClick={handleCheckAll} className="px-4 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-full text-xs font-black uppercase transition-all active:scale-95 shadow-sm">
+                         ✓ Check All
+                       </button>
+                       <button onClick={handleUncheckAll} className="px-4 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded-full text-xs font-black uppercase transition-all active:scale-95 shadow-sm">
+                         ✗ Uncheck All
+                       </button>
+                    </div>
                   </div>
 
                   <div className="space-y-6">
@@ -660,7 +740,6 @@ export default function Pemeriksaan() {
                       <div key={group.title} className="border border-slate-200 rounded-2xl overflow-hidden">
                         <div className="bg-[#F8F9FA] px-4 py-3 border-b border-slate-200"><h3 className="font-bold text-slate-700 text-sm">{group.title}</h3></div>
                         <div className="divide-y divide-slate-100">
-                          {/* FITUR HIDE: Filter agar item yang punya defaultState TIDAK dirender di layar petugas */}
                           {group.data.filter(item => !item.defaultState).map((item, idx) => (
                             <div key={item.id} className={`p-4 flex flex-col gap-3 ${ifpData[item.id]?.status === 'tidak' ? 'bg-red-50/50' : 'hover:bg-slate-50/50'}`}>
                               <div className="flex justify-between items-start gap-4">
